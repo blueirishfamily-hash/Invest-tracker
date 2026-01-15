@@ -3,6 +3,14 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertHoldingSchema } from "@shared/schema";
 import { z } from "zod";
+import {
+  createLinkToken,
+  exchangePublicToken,
+  getAccounts,
+  getHoldings as getPlaidHoldings,
+  getItem,
+  getInstitution,
+} from "./plaid";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -243,6 +251,262 @@ export async function registerRoutes(
       res.json(indexData);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch index data" });
+    }
+  });
+
+  // Plaid API endpoints
+  // For now, we'll use a default userId since we don't have auth yet
+  // In production, this would come from the session
+  const getCurrentUserId = () => "default-user-id";
+
+  app.post("/api/plaid/link-token", async (req, res) => {
+    try {
+      const userId = getCurrentUserId();
+      const linkToken = await createLinkToken(userId);
+
+      if (!linkToken) {
+        return res.status(503).json({ 
+          error: "Plaid is not configured. Please add PLAID_CLIENT_ID and PLAID_SECRET to your environment variables." 
+        });
+      }
+
+      res.json({ linkToken });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create link token" });
+    }
+  });
+
+  app.post("/api/plaid/exchange-token", async (req, res) => {
+    try {
+      const { publicToken } = req.body;
+
+      if (!publicToken || typeof publicToken !== "string") {
+        return res.status(400).json({ error: "publicToken is required" });
+      }
+
+      const { accessToken, itemId } = await exchangePublicToken(publicToken);
+      const item = await getItem(accessToken);
+      
+      // Get institution info
+      let institutionName = "Unknown Institution";
+      try {
+        const institution = await getInstitution(item.institutionId);
+        institutionName = institution.name;
+      } catch (error) {
+        console.error("Failed to fetch institution:", error);
+      }
+
+      // Get accounts
+      const accounts = await getAccounts(accessToken);
+      const userId = getCurrentUserId();
+
+      // Store each account
+      const createdAccounts = [];
+      for (const account of accounts) {
+        const plaidAccount = await storage.createPlaidAccount({
+          userId,
+          accessToken, // In production, encrypt this
+          itemId,
+          institutionId: item.institutionId,
+          institutionName,
+          accountId: account.accountId,
+          accountName: account.name,
+          accountType: account.type,
+          accountSubtype: account.subtype,
+          lastSyncedAt: new Date().toISOString(),
+        });
+        createdAccounts.push(plaidAccount);
+      }
+
+      res.json({ accounts: createdAccounts });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to exchange token" });
+    }
+  });
+
+  app.get("/api/plaid/accounts", async (req, res) => {
+    try {
+      const userId = getCurrentUserId();
+      const accounts = await storage.getPlaidAccounts(userId);
+      res.json(accounts);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch accounts" });
+    }
+  });
+
+  app.post("/api/plaid/sync/:accountId", async (req, res) => {
+    try {
+      const { accountId } = req.params;
+      const account = await storage.getPlaidAccount(accountId);
+
+      if (!account) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      // Fetch holdings from Plaid
+      const plaidHoldings = await getPlaidHoldings(account.accessToken);
+
+      // Map Plaid holdings to our Holding schema
+      const holdings: Array<{
+        id: string;
+        ticker: string;
+        name: string;
+        quantity: number;
+        costBasis: number;
+        currentPrice: number;
+        currentValue: number;
+        growthRate30d: number;
+        sector: string;
+        industry: string;
+      }> = [];
+
+      for (const plaidHolding of plaidHoldings) {
+        if (plaidHolding.accountId !== account.accountId) continue;
+
+        const ticker = plaidHolding.ticker || "UNKNOWN";
+        const holdingId = `${account.id}-${plaidHolding.securityId}`;
+
+        // Check if holding already exists
+        const existingHolding = Array.from(storage["holdings"].values()).find(
+          (h) => h.id === holdingId
+        );
+
+        // For now, we'll need to fetch current price and calculate growth
+        // This should ideally use our market data utility
+        const currentPrice = plaidHolding.price;
+        const currentValue = plaidHolding.value;
+        const quantity = plaidHolding.quantity;
+        const costBasis = plaidHolding.costBasis || currentValue * 0.9; // Fallback
+
+        // Calculate growth (simplified - ideally use historical data)
+        const growthRate30d = costBasis > 0 
+          ? ((currentValue - costBasis) / costBasis) * 100 
+          : 0;
+
+        const holding = {
+          id: holdingId,
+          ticker,
+          name: plaidHolding.name,
+          quantity,
+          costBasis,
+          currentPrice,
+          currentValue,
+          growthRate30d,
+          sector: plaidHolding.sector || "Unknown",
+          industry: plaidHolding.industry || "Unknown",
+        };
+
+        if (existingHolding) {
+          await storage.updateHolding(holdingId, holding);
+        } else {
+          await storage.createHolding(holding);
+        }
+
+        holdings.push(holding);
+      }
+
+      // Update account last synced time
+      await storage.updatePlaidAccount(accountId, {
+        lastSyncedAt: new Date().toISOString(),
+      });
+
+      res.json({ holdings, synced: holdings.length });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to sync account" });
+    }
+  });
+
+  app.post("/api/plaid/sync-all", async (req, res) => {
+    try {
+      const userId = getCurrentUserId();
+      const accounts = await storage.getPlaidAccounts(userId);
+      const results = [];
+
+      for (const account of accounts) {
+        try {
+          const plaidHoldings = await getPlaidHoldings(account.accessToken);
+          const holdings = [];
+
+          for (const plaidHolding of plaidHoldings) {
+            if (plaidHolding.accountId !== account.accountId) continue;
+
+            const ticker = plaidHolding.ticker || "UNKNOWN";
+            const holdingId = `${account.id}-${plaidHolding.securityId}`;
+
+            const currentPrice = plaidHolding.price;
+            const currentValue = plaidHolding.value;
+            const quantity = plaidHolding.quantity;
+            const costBasis = plaidHolding.costBasis || currentValue * 0.9;
+            const growthRate30d = costBasis > 0 
+              ? ((currentValue - costBasis) / costBasis) * 100 
+              : 0;
+
+            const holding = {
+              id: holdingId,
+              ticker,
+              name: plaidHolding.name,
+              quantity,
+              costBasis,
+              currentPrice,
+              currentValue,
+              growthRate30d,
+              sector: plaidHolding.sector || "Unknown",
+              industry: plaidHolding.industry || "Unknown",
+            };
+
+            const existingHolding = Array.from(storage["holdings"].values()).find(
+              (h) => h.id === holdingId
+            );
+
+            if (existingHolding) {
+              await storage.updateHolding(holdingId, holding);
+            } else {
+              await storage.createHolding(holding);
+            }
+
+            holdings.push(holding);
+          }
+
+          await storage.updatePlaidAccount(account.id, {
+            lastSyncedAt: new Date().toISOString(),
+          });
+
+          results.push({ accountId: account.id, holdings: holdings.length, success: true });
+        } catch (error: any) {
+          results.push({ 
+            accountId: account.id, 
+            error: error.message || "Failed to sync", 
+            success: false 
+          });
+        }
+      }
+
+      res.json({ results });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to sync accounts" });
+    }
+  });
+
+  app.delete("/api/plaid/accounts/:accountId", async (req, res) => {
+    try {
+      const { accountId } = req.params;
+      const deleted = await storage.deletePlaidAccount(accountId);
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      // Also delete holdings associated with this account
+      const allHoldings = await storage.getHoldings();
+      for (const holding of allHoldings) {
+        if (holding.id.startsWith(`${accountId}-`)) {
+          await storage.deleteHolding(holding.id);
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete account" });
     }
   });
 

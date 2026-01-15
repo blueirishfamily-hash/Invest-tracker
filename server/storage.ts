@@ -11,6 +11,8 @@ import {
   type NewsArticle,
   type StockData,
   type IndexData,
+  type PlaidAccount,
+  type InsertPlaidAccount,
   demoHoldings,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
@@ -39,15 +41,24 @@ export interface IStorage {
   getNewsArticles(): Promise<NewsArticle[]>;
   getStockData(query: string, timeframe: string): Promise<StockData | null>;
   getIndexData(indices: string[], timeframe: string): Promise<IndexData[]>;
+  
+  // Plaid Account methods
+  createPlaidAccount(account: InsertPlaidAccount): Promise<PlaidAccount>;
+  getPlaidAccounts(userId: string): Promise<PlaidAccount[]>;
+  getPlaidAccount(id: string): Promise<PlaidAccount | undefined>;
+  updatePlaidAccount(id: string, updates: Partial<InsertPlaidAccount>): Promise<PlaidAccount | undefined>;
+  deletePlaidAccount(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private holdings: Map<string, Holding>;
+  private plaidAccounts: Map<string, PlaidAccount>;
 
   constructor() {
     this.users = new Map();
     this.holdings = new Map();
+    this.plaidAccounts = new Map();
     
     for (const holding of demoHoldings) {
       this.holdings.set(holding.id, holding);
@@ -72,7 +83,29 @@ export class MemStorage implements IStorage {
   }
 
   async getHoldings(): Promise<Holding[]> {
-    const holdings = Array.from(this.holdings.values());
+    // First, get holdings from Plaid accounts if any exist
+    const userId = "default-user-id"; // In production, get from session
+    const plaidAccounts = await this.getPlaidAccounts(userId);
+    
+    // If there are Plaid accounts, prioritize their holdings
+    // For now, merge both sources (Plaid holdings override demo holdings)
+    const holdingsMap = new Map<string, Holding>();
+    
+    // Add demo holdings first (as fallback)
+    const demoHoldingsList = Array.from(this.holdings.values());
+    for (const holding of demoHoldingsList) {
+      holdingsMap.set(holding.id, holding);
+    }
+    
+    // Add/override with Plaid holdings (those that start with accountId-)
+    const plaidHoldings = Array.from(this.holdings.values()).filter(
+      (h) => h.id.includes("-") && plaidAccounts.some((account) => h.id.startsWith(`${account.id}-`))
+    );
+    for (const holding of plaidHoldings) {
+      holdingsMap.set(holding.id, holding);
+    }
+    
+    const holdings = Array.from(holdingsMap.values());
     
     // Update holdings with real current prices (async, non-blocking)
     this.updateHoldingsPrices(holdings).catch((error) => {
@@ -867,6 +900,51 @@ export class MemStorage implements IStorage {
     }
 
     return historicalData;
+  }
+
+  // Plaid Account methods
+  async createPlaidAccount(account: InsertPlaidAccount): Promise<PlaidAccount> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const plaidAccount: PlaidAccount = {
+      ...account,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.plaidAccounts.set(id, plaidAccount);
+    return plaidAccount;
+  }
+
+  async getPlaidAccounts(userId: string): Promise<PlaidAccount[]> {
+    return Array.from(this.plaidAccounts.values()).filter(
+      (account) => account.userId === userId
+    );
+  }
+
+  async getPlaidAccount(id: string): Promise<PlaidAccount | undefined> {
+    return this.plaidAccounts.get(id);
+  }
+
+  async updatePlaidAccount(
+    id: string,
+    updates: Partial<InsertPlaidAccount>
+  ): Promise<PlaidAccount | undefined> {
+    const existing = this.plaidAccounts.get(id);
+    if (!existing) return undefined;
+
+    const updated: PlaidAccount = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.plaidAccounts.set(id, updated);
+    return updated;
+  }
+
+  async deletePlaidAccount(id: string): Promise<boolean> {
+    return this.plaidAccounts.delete(id);
   }
 }
 

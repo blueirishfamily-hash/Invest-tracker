@@ -137,6 +137,32 @@ export const indexDataSchema = z.object({
 
 export type IndexData = z.infer<typeof indexDataSchema>;
 
+// Plaid Account Schema
+export const plaidAccountSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  accessToken: z.string(), // Encrypted in storage
+  itemId: z.string(),
+  institutionId: z.string(),
+  institutionName: z.string(),
+  accountId: z.string(),
+  accountName: z.string(),
+  accountType: z.string().optional(),
+  accountSubtype: z.string().optional(),
+  lastSyncedAt: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type PlaidAccount = z.infer<typeof plaidAccountSchema>;
+
+export const insertPlaidAccountSchema = plaidAccountSchema.omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+export type InsertPlaidAccount = z.infer<typeof insertPlaidAccountSchema>;
+
 // Demo Holdings Data
 export const demoHoldings: Holding[] = [
   {

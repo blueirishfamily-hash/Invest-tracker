@@ -10,7 +10,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings, Newspaper, Search } from "lucide-react";
+import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings, Newspaper, Search, Link2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const navItems = [
@@ -18,6 +18,11 @@ const navItems = [
     title: "Dashboard",
     url: "/",
     icon: LayoutDashboard,
+  },
+  {
+    title: "Accounts",
+    url: "/accounts",
+    icon: Link2,
   },
   {
     title: "Holdings",

@@ -14,6 +14,7 @@ import Analysis from "@/pages/analysis";
 import BubbleWatchPage from "@/pages/bubble-watch";
 import News from "@/pages/news";
 import Research from "@/pages/research";
+import Accounts from "@/pages/accounts";
 
 function Router() {
   return (
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/bubble-watch" component={BubbleWatchPage} />
       <Route path="/news" component={News} />
       <Route path="/research" component={Research} />
+      <Route path="/accounts" component={Accounts} />
       <Route component={NotFound} />
     </Switch>
   );
