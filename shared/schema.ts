@@ -56,6 +56,20 @@ export const benchmarkDataSchema = z.object({
 
 export type BenchmarkData = z.infer<typeof benchmarkDataSchema>;
 
+// Benchmark Chart Data Schema
+export const benchmarkChartDataSchema = z.object({
+  portfolio: z.array(z.object({
+    date: z.string(),
+    value: z.number(),
+  })),
+  spy: z.array(z.object({
+    date: z.string(),
+    value: z.number(),
+  })),
+});
+
+export type BenchmarkChartData = z.infer<typeof benchmarkChartDataSchema>;
+
 // Industry Analysis Schema
 export const industryAnalysisSchema = z.object({
   industry: z.string(),
@@ -77,6 +91,51 @@ export const bubbleWarningSchema = z.object({
 });
 
 export type BubbleWarning = z.infer<typeof bubbleWarningSchema>;
+
+// News Article Schema
+export const newsArticleSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  url: z.string(),
+  source: z.string(),
+  publishedAt: z.string(),
+  description: z.string(),
+  imageUrl: z.string().optional(),
+  sentiment: z.enum(["positive", "negative", "neutral"]),
+  relevanceSummary: z.string(),
+  relatedTicker: z.string().optional(),
+  relatedSector: z.string().optional(),
+  relatedIndustry: z.string().optional(),
+});
+
+export type NewsArticle = z.infer<typeof newsArticleSchema>;
+
+// Stock Data Schema
+export const stockDataSchema = z.object({
+  ticker: z.string(),
+  name: z.string(),
+  currentPrice: z.number(),
+  sector: z.string().optional(),
+  industry: z.string().optional(),
+  historicalData: z.array(z.object({
+    date: z.string(),
+    price: z.number(),
+  })),
+});
+
+export type StockData = z.infer<typeof stockDataSchema>;
+
+// Index Data Schema
+export const indexDataSchema = z.object({
+  symbol: z.string(),
+  name: z.string(),
+  historicalData: z.array(z.object({
+    date: z.string(),
+    price: z.number(),
+  })),
+});
+
+export type IndexData = z.infer<typeof indexDataSchema>;
 
 // Demo Holdings Data
 export const demoHoldings: Holding[] = [

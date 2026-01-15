@@ -160,7 +160,7 @@ export default function Analysis() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <IndustryChart data={industries} isLoading={industriesLoading} />
-        <BenchmarkChart data={benchmark} isLoading={benchmarkLoading} />
+        <BenchmarkChart data={benchmark} isLoading={benchmarkLoading} timeframe="1M" />
       </div>
 
       <IndustryTable data={industries} isLoading={industriesLoading} />

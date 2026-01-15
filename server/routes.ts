@@ -8,6 +8,87 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  const fetchWithTimeout = async (url: string, timeoutMs = 5000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const extractDomainFromName = (name: string) => {
+    const cleanName = name
+      .replace(/Inc\.?|Corp\.?|Corporation|Company|Co\.?|Ltd\.?|Limited/gi, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, "");
+    return `${cleanName}.com`;
+  };
+
+  const getLogoUrls = (ticker: string, name?: string) => {
+    const domainMap: Record<string, string> = {
+      AAPL: "apple.com",
+      MSFT: "microsoft.com",
+      GOOGL: "google.com",
+      GOOG: "google.com",
+      AMZN: "amazon.com",
+      TSLA: "tesla.com",
+      META: "meta.com",
+      NVDA: "nvidia.com",
+      JPM: "jpmorgan.com",
+      JNJ: "jnj.com",
+      V: "visa.com",
+      MA: "mastercard.com",
+      DIS: "disney.com",
+      NFLX: "netflix.com",
+    };
+
+    const domain = domainMap[ticker] || (name ? extractDomainFromName(name) : null);
+
+    return [
+      domain ? `https://logo.clearbit.com/${domain}` : null,
+      `https://assets.alphaquery.com/stock/${ticker}/logo`,
+      `https://financialmodelingprep.com/image-stock/${ticker}.png`,
+    ].filter(Boolean) as string[];
+  };
+
+  app.get("/api/logo", async (req, res) => {
+    const tickerParam = req.query.ticker;
+    const nameParam = req.query.name;
+
+    if (!tickerParam || typeof tickerParam !== "string") {
+      return res.status(400).json({ error: "ticker query param is required" });
+    }
+
+    const ticker = tickerParam.toUpperCase();
+    const name = typeof nameParam === "string" ? nameParam : undefined;
+    const urls = getLogoUrls(ticker, name);
+
+    for (const url of urls) {
+      try {
+        const response = await fetchWithTimeout(url, 5000);
+        if (!response.ok) {
+          continue;
+        }
+
+        const contentType = response.headers.get("content-type") || "image/png";
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        res.set({
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=86400",
+        });
+        return res.status(200).send(buffer);
+      } catch {
+        continue;
+      }
+    }
+
+    return res.status(404).json({ error: "Logo not found" });
+  });
   
   app.get("/api/holdings", async (_req, res) => {
     try {
@@ -81,12 +162,23 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/benchmark", async (_req, res) => {
+  app.get("/api/benchmark", async (req, res) => {
     try {
-      const benchmark = await storage.getBenchmarkData();
+      const timeframe = (req.query.timeframe as string) || "1M";
+      const benchmark = await storage.getBenchmarkData(timeframe);
       res.json(benchmark);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch benchmark data" });
+    }
+  });
+
+  app.get("/api/benchmark/chart", async (req, res) => {
+    try {
+      const timeframe = (req.query.timeframe as string) || "1M";
+      const chartData = await storage.getBenchmarkChartData(timeframe);
+      res.json(chartData);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch benchmark chart data" });
     }
   });
 
@@ -105,6 +197,52 @@ export async function registerRoutes(
       res.json(warnings);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bubble watch data" });
+    }
+  });
+
+  app.get("/api/news", async (req, res) => {
+    try {
+      const articles = await storage.getNewsArticles();
+      res.json(articles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch news articles" });
+    }
+  });
+
+  app.get("/api/research/stock", async (req, res) => {
+    try {
+      const query = req.query.query as string;
+      const timeframe = (req.query.timeframe as string) || "1M";
+
+      if (!query) {
+        return res.status(400).json({ error: "Query parameter is required" });
+      }
+
+      const stockData = await storage.getStockData(query, timeframe);
+      if (!stockData) {
+        return res.status(404).json({ error: "Stock not found" });
+      }
+
+      res.json(stockData);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stock data" });
+    }
+  });
+
+  app.get("/api/research/indices", async (req, res) => {
+    try {
+      const timeframe = (req.query.timeframe as string) || "1M";
+      const indicesParam = req.query.indices as string;
+
+      if (!indicesParam) {
+        return res.json([]);
+      }
+
+      const indices = indicesParam.split(",").filter(Boolean);
+      const indexData = await storage.getIndexData(indices, timeframe);
+      res.json(indexData);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch index data" });
     }
   });
 

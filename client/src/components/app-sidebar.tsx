@@ -10,7 +10,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings } from "lucide-react";
+import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings, Newspaper, Search } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const navItems = [
@@ -33,6 +33,16 @@ const navItems = [
     title: "Bubble Watch",
     url: "/bubble-watch",
     icon: AlertTriangle,
+  },
+  {
+    title: "News",
+    url: "/news",
+    icon: Newspaper,
+  },
+  {
+    title: "Research",
+    url: "/research",
+    icon: Search,
   },
 ];
 
