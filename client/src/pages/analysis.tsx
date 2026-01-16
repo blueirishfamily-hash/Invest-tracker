@@ -1,18 +1,20 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IndustryChart, IndustryTable } from "@/components/industry-chart";
 import { BenchmarkChart } from "@/components/benchmark-chart";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, Target, AlertCircle } from "lucide-react";
 import { SEO } from "@/components/seo";
-import type { IndustryAnalysis, BenchmarkData, PortfolioMetrics } from "@shared/schema";
+import type { SectorAnalysis, BenchmarkData, PortfolioMetrics } from "@shared/schema";
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 export default function Analysis() {
-  const { data: industries, isLoading: industriesLoading } = useQuery<IndustryAnalysis[]>({
-    queryKey: ["/api/industry-analysis"],
+  const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const { data: sectors, isLoading: sectorsLoading } = useQuery<SectorAnalysis[]>({
+    queryKey: ["/api/sector-analysis"],
   });
 
   const { data: benchmark, isLoading: benchmarkLoading } = useQuery<BenchmarkData>({
@@ -23,19 +25,19 @@ export default function Analysis() {
     queryKey: ["/api/portfolio/metrics"],
   });
 
-  const isLoading = industriesLoading || benchmarkLoading || metricsLoading;
+  const isLoading = sectorsLoading || benchmarkLoading || metricsLoading;
 
-  const topPerformer = industries?.reduce((prev, current) => 
+  const topPerformer = sectors?.reduce((prev, current) => 
     current.averageGrowth > prev.averageGrowth ? current : prev
-  , industries[0]);
+  , sectors[0]);
 
-  const bottomPerformer = industries?.reduce((prev, current) => 
+  const bottomPerformer = sectors?.reduce((prev, current) => 
     current.averageGrowth < prev.averageGrowth ? current : prev
-  , industries[0]);
+  , sectors[0]);
 
-  const mostConcentrated = industries?.reduce((prev, current) => 
+  const mostConcentrated = sectors?.reduce((prev, current) => 
     current.percentage > prev.percentage ? current : prev
-  , industries[0]);
+  , sectors[0]);
 
   return (
     <div className="p-6 space-y-6" data-testid="page-analysis">
@@ -67,7 +69,7 @@ export default function Analysis() {
             ) : topPerformer ? (
               <>
                 <div className="text-lg font-semibold truncate" data-testid="text-top-performer-name">
-                  {topPerformer.industry}
+                  {topPerformer.sector}
                 </div>
                 <p className="text-chart-1 text-sm font-medium tabular-nums" data-testid="text-top-performer-growth">
                   {formatPercent(topPerformer.averageGrowth)}
@@ -92,7 +94,7 @@ export default function Analysis() {
             ) : bottomPerformer ? (
               <>
                 <div className="text-lg font-semibold truncate" data-testid="text-bottom-performer-name">
-                  {bottomPerformer.industry}
+                  {bottomPerformer.sector}
                 </div>
                 <p 
                   className={`text-sm font-medium tabular-nums ${bottomPerformer.averageGrowth >= 0 ? "text-chart-1" : "text-destructive"}`}
@@ -120,7 +122,7 @@ export default function Analysis() {
             ) : mostConcentrated ? (
               <>
                 <div className="text-lg font-semibold truncate" data-testid="text-largest-position-name">
-                  {mostConcentrated.industry}
+                  {mostConcentrated.sector}
                 </div>
                 <p className="text-muted-foreground text-sm tabular-nums" data-testid="text-largest-position-percent">
                   {mostConcentrated.percentage.toFixed(1)}% of portfolio
@@ -142,13 +144,13 @@ export default function Analysis() {
           <CardContent>
             {isLoading ? (
               <div className="h-10 bg-muted animate-pulse rounded" />
-            ) : industries ? (
+            ) : sectors ? (
               <>
                 <div className="text-lg font-semibold" data-testid="text-sector-count">
-                  {industries.length} Sectors
+                  {sectors.length} Sectors
                 </div>
                 <p className="text-muted-foreground text-sm" data-testid="text-diversification-status">
-                  {industries.length >= 5 ? "Well diversified" : "Consider diversifying"}
+                  {sectors.length >= 5 ? "Well diversified" : "Consider diversifying"}
                 </p>
               </>
             ) : (
@@ -159,11 +161,21 @@ export default function Analysis() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <IndustryChart data={industries} isLoading={industriesLoading} />
+        <IndustryChart 
+          data={sectors} 
+          isLoading={sectorsLoading}
+          selectedSector={selectedSector}
+          onSectorSelect={setSelectedSector}
+        />
         <BenchmarkChart data={benchmark} isLoading={benchmarkLoading} timeframe="1M" />
       </div>
 
-      <IndustryTable data={industries} isLoading={industriesLoading} />
+      <IndustryTable 
+        data={sectors} 
+        isLoading={sectorsLoading}
+        selectedSector={selectedSector}
+        onSectorSelect={setSelectedSector}
+      />
 
       <Card data-testid="card-insights">
         <CardHeader>
@@ -202,17 +214,17 @@ export default function Analysis() {
                 <div className="p-4 rounded-lg bg-chart-4/10 border border-chart-4/20" data-testid="insight-concentration">
                   <h4 className="font-medium mb-1 text-chart-4">Concentration Risk</h4>
                   <p className="text-sm text-muted-foreground">
-                    {mostConcentrated.industry} represents {mostConcentrated.percentage.toFixed(1)}% of your portfolio.
+                    {mostConcentrated.sector} represents {mostConcentrated.percentage.toFixed(1)}% of your portfolio.
                     Consider rebalancing to reduce concentration risk.
                   </p>
                 </div>
               )}
 
-              {industries && industries.length < 4 && (
+              {sectors && sectors.length < 4 && (
                 <div className="p-4 rounded-lg bg-muted/50" data-testid="insight-diversification">
                   <h4 className="font-medium mb-1">Diversification Opportunity</h4>
                   <p className="text-sm text-muted-foreground">
-                    Your portfolio spans only {industries.length} sector{industries.length !== 1 ? "s" : ""}. 
+                    Your portfolio spans only {sectors.length} sector{sectors.length !== 1 ? "s" : ""}. 
                     Adding exposure to more sectors could help reduce overall portfolio volatility.
                   </p>
                 </div>

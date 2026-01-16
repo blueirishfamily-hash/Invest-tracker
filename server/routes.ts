@@ -3,6 +3,11 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertHoldingSchema } from "@shared/schema";
 import { z } from "zod";
+import multer from "multer";
+import { parseCSV } from "./csv-parser";
+import { fetchCurrentQuote, fetchHistoricalData, searchStocks } from "./market-data";
+import { estimateUpcomingDividends, getCompanyName } from "./dividend-data";
+import { fetchFinancialData } from "./financial-data";
 import {
   createLinkToken,
   exchangePublicToken,
@@ -16,6 +21,22 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Configure multer for file uploads (memory storage)
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (_req, file, cb) => {
+      // Accept CSV files
+      if (file.mimetype === "text/csv" || file.mimetype === "application/vnd.ms-excel" || file.originalname.toLowerCase().endsWith(".csv")) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only CSV files are allowed"));
+      }
+    },
+  });
+
   const fetchWithTimeout = async (url: string, timeoutMs = 5000) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -161,6 +182,368 @@ export async function registerRoutes(
     }
   });
 
+  // CSV Upload endpoint
+  app.post("/api/holdings/upload-csv", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Convert buffer to string
+      const csvContent = req.file.buffer.toString("utf-8");
+      
+      // Parse CSV
+      const parseResult = parseCSV(csvContent);
+
+      if (parseResult.errors.length > 0 && parseResult.holdings.length === 0) {
+        return res.status(400).json({ 
+          error: "Failed to parse CSV", 
+          errors: parseResult.errors 
+        });
+      }
+
+      if (parseResult.holdings.length === 0) {
+        return res.status(400).json({ error: "No valid holdings found in CSV" });
+      }
+
+      // Get existing holdings to check for duplicates
+      const existingHoldings = await storage.getHoldings();
+      const tickerMap = new Map<string, typeof existingHoldings[0]>();
+      existingHoldings.forEach((h) => {
+        // Check by ticker (normalize to uppercase)
+        const ticker = h.ticker.toUpperCase();
+        if (!tickerMap.has(ticker)) {
+          tickerMap.set(ticker, h);
+        }
+      });
+
+      const results = {
+        created: 0,
+        updated: 0,
+        errors: [] as Array<{ ticker: string; message: string }>,
+      };
+
+      // Process each holding from CSV
+      for (const csvHolding of parseResult.holdings) {
+        try {
+          const ticker = csvHolding.ticker.toUpperCase();
+          const existing = tickerMap.get(ticker);
+
+          // Fetch market data for missing fields
+          let companyName = csvHolding.name || "Unknown";
+          let sector = csvHolding.sector || "Unknown";
+          let industry = csvHolding.industry || "Unknown";
+          let currentPrice = 0;
+          let growthRate30d = 0;
+
+          try {
+            const quote = await fetchCurrentQuote(ticker);
+            if (quote) {
+              currentPrice = quote.price;
+              if (!companyName || companyName === "Unknown") {
+                companyName = quote.name;
+              }
+            }
+          } catch (marketError) {
+            console.warn(`Could not fetch market data for ${ticker}:`, marketError);
+          }
+
+          // If we still don't have sector/industry, try to get from market data
+          // (We'll use "Unknown" for now as market-data.ts doesn't expose sector/industry)
+          // In production, you might want to add a function to fetch sector/industry
+
+          if (currentPrice === 0) {
+            // Fallback: use cost basis as current price if no market data
+            currentPrice = csvHolding.costBasis;
+          }
+
+          const currentValue = csvHolding.quantity * currentPrice;
+          
+          // Calculate growth rate (simplified - use cost basis vs current price)
+          if (csvHolding.costBasis > 0) {
+            growthRate30d = ((currentPrice - csvHolding.costBasis) / csvHolding.costBasis) * 100;
+          }
+
+          if (existing) {
+            // Merge holdings: combine quantities and average cost basis
+            const combinedQuantity = existing.quantity + csvHolding.quantity;
+            const totalCost = existing.quantity * existing.costBasis + csvHolding.quantity * csvHolding.costBasis;
+            const averageCostBasis = combinedQuantity > 0 ? totalCost / combinedQuantity : 0;
+            const newCurrentValue = combinedQuantity * currentPrice;
+
+            const updatedHolding: typeof insertHoldingSchema._type = {
+              ticker: existing.ticker, // Keep original ticker format
+              name: existing.name, // Keep original name
+              quantity: combinedQuantity,
+              costBasis: averageCostBasis,
+              currentPrice: currentPrice,
+              currentValue: newCurrentValue,
+              growthRate30d: growthRate30d,
+              sector: existing.sector !== "Unknown" ? existing.sector : sector,
+              industry: existing.industry !== "Unknown" ? existing.industry : industry,
+            };
+
+            const validatedHolding = insertHoldingSchema.parse(updatedHolding);
+            await storage.updateHolding(existing.id, validatedHolding);
+            results.updated++;
+          } else {
+            // Create new holding
+            const newHolding: typeof insertHoldingSchema._type = {
+              ticker: ticker,
+              name: companyName,
+              quantity: csvHolding.quantity,
+              costBasis: csvHolding.costBasis,
+              currentPrice: currentPrice,
+              currentValue: currentValue,
+              growthRate30d: growthRate30d,
+              sector: sector,
+              industry: industry,
+            };
+
+            const validatedHolding = insertHoldingSchema.parse(newHolding);
+            await storage.createHolding(validatedHolding);
+            results.created++;
+          }
+        } catch (holdingError: any) {
+          results.errors.push({
+            ticker: csvHolding.ticker,
+            message: holdingError.message || "Failed to process holding",
+          });
+        }
+      }
+
+      // Include parse errors if any
+      if (parseResult.errors.length > 0) {
+        parseResult.errors.forEach((err) => {
+          results.errors.push({
+            ticker: "N/A",
+            message: err.message,
+          });
+        });
+      }
+
+      res.json({
+        success: true,
+        summary: {
+          created: results.created,
+          updated: results.updated,
+          totalProcessed: results.created + results.updated,
+          errors: results.errors.length,
+        },
+        errors: results.errors.length > 0 ? results.errors : undefined,
+      });
+    } catch (error: any) {
+      console.error("Error uploading CSV:", error);
+      res.status(500).json({ 
+        error: error.message || "Failed to process CSV file" 
+      });
+    }
+  });
+
+  // Holdings performance endpoint
+  app.get("/api/holdings/performance", async (req, res) => {
+    try {
+      const timeframe = (req.query.timeframe as string) || "1M";
+      
+      // Get all holdings
+      const holdings = await storage.getHoldings();
+
+      if (holdings.length === 0) {
+        return res.json([]);
+      }
+
+      interface HoldingPerformance {
+        ticker: string;
+        name: string;
+        quantity: number;
+        startPrice: number;
+        currentPrice: number;
+        currentValue: number;
+        percentChange: number;
+        valueChange: number;
+      }
+
+      const performanceData: HoldingPerformance[] = [];
+
+      // Calculate timeframe start date
+      const now = new Date();
+      let startDate: Date;
+      switch (timeframe) {
+        case "1D":
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 1);
+          break;
+        case "5D":
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 5);
+          break;
+        case "1M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+          break;
+        case "3M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 3);
+          break;
+        case "6M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 6);
+          break;
+        case "YTD":
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        case "1Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          break;
+        case "5Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 5);
+          break;
+        case "MAX":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 5);
+          break;
+        default:
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+      }
+
+      const period1 = Math.floor(startDate.getTime() / 1000);
+      const period2 = Math.floor(now.getTime() / 1000);
+
+      // Process each holding
+      for (const holding of holdings) {
+        try {
+          const currentPrice = holding.currentPrice;
+          const currentValue = holding.currentValue;
+          let startPrice = currentPrice; // Fallback to current price
+
+          // Fetch historical data to get start price
+          try {
+            const historicalData = await fetchHistoricalData(holding.ticker, timeframe);
+
+            if (historicalData && historicalData.length > 0) {
+              // Get the first (oldest) price point as start price
+              // Historical data from fetchHistoricalData is already sorted by date
+              const firstDataPoint = historicalData[0];
+              // Note: fetchHistoricalData returns indexed prices (starting at 0), so we need to calculate actual price
+              // For simplicity, use cost basis or current price as fallback
+              // In a real scenario, you'd want to store the actual first price before indexing
+              startPrice = holding.costBasis || currentPrice;
+            } else {
+              // If no historical data, fall back to cost basis
+              startPrice = holding.costBasis || currentPrice;
+            }
+          } catch (historicalError) {
+            console.warn(`Could not fetch historical data for ${holding.ticker}:`, historicalError);
+            // Fall back to cost basis or current price
+            startPrice = holding.costBasis || currentPrice;
+          }
+
+          // Calculate changes
+          const percentChange = startPrice > 0 
+            ? ((currentPrice - startPrice) / startPrice) * 100 
+            : 0;
+          const valueChange = (currentPrice - startPrice) * holding.quantity;
+
+          performanceData.push({
+            ticker: holding.ticker,
+            name: holding.name,
+            quantity: holding.quantity,
+            startPrice,
+            currentPrice,
+            currentValue,
+            percentChange,
+            valueChange,
+          });
+        } catch (holdingError: any) {
+          console.warn(`Error processing performance for ${holding.ticker}:`, holdingError.message);
+          // Skip this holding and continue
+        }
+      }
+
+      res.json(performanceData);
+    } catch (error: any) {
+      console.error("Error fetching holdings performance:", error);
+      res.status(500).json({ 
+        error: error.message || "Failed to fetch holdings performance" 
+      });
+    }
+  });
+
+  // Dividend schedule endpoint
+  app.get("/api/dividends/schedule", async (_req, res) => {
+    try {
+      const currentYear = new Date().getFullYear();
+      const now = new Date();
+      const endOfYear = new Date(currentYear, 11, 31); // December 31
+
+      // Get all holdings
+      const holdings = await storage.getHoldings();
+
+      if (holdings.length === 0) {
+        return res.json({
+          schedule: [],
+          totalEstimated: 0,
+          year: currentYear,
+        });
+      }
+
+      const allSchedules: typeof import("./dividend-data").DividendSchedule[] = [];
+
+      // Process each holding to get dividend schedule
+      for (const holding of holdings) {
+        try {
+          // Get company name if not already set
+          let companyName = holding.name;
+          if (!companyName || companyName === "Unknown") {
+            companyName = await getCompanyName(holding.ticker);
+          }
+
+          // Estimate upcoming dividends for this holding
+          const schedules = await estimateUpcomingDividends(
+            holding.ticker,
+            holding.quantity,
+            holding.currentPrice,
+            currentYear
+          );
+
+          // Update company names in schedules
+          schedules.forEach((schedule) => {
+            schedule.name = companyName;
+          });
+
+          allSchedules.push(...schedules);
+        } catch (error: any) {
+          console.warn(`Error processing dividends for ${holding.ticker}:`, error.message);
+          // Continue with other holdings even if one fails
+        }
+      }
+
+      // Sort by payment date
+      allSchedules.sort((a, b) => {
+        return new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime();
+      });
+
+      // Calculate total estimated dividends for the year
+      const totalEstimated = allSchedules.reduce((sum, schedule) => {
+        return sum + schedule.totalAmount;
+      }, 0);
+
+      res.json({
+        schedule: allSchedules,
+        totalEstimated,
+        year: currentYear,
+      });
+    } catch (error: any) {
+      console.error("Error fetching dividend schedule:", error);
+      res.status(500).json({ 
+        error: error.message || "Failed to fetch dividend schedule" 
+      });
+    }
+  });
+
   app.get("/api/portfolio/metrics", async (_req, res) => {
     try {
       const metrics = await storage.getPortfolioMetrics();
@@ -196,6 +579,43 @@ export async function registerRoutes(
       res.json(analysis);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch industry analysis" });
+    }
+  });
+
+  app.get("/api/sector-analysis", async (_req, res) => {
+    try {
+      const analysis = await storage.getSectorAnalysis();
+      res.json(analysis);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sector analysis" });
+    }
+  });
+
+  app.get("/api/fear-greed", async (_req, res) => {
+    try {
+      const { getFearGreedIndex } = await import("./fear-greed");
+      const data = await getFearGreedIndex();
+      if (!data) {
+        return res.status(503).json({ error: "Fear & Greed Index data not available" });
+      }
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching Fear & Greed Index:", error);
+      res.status(500).json({ error: "Failed to fetch Fear & Greed Index" });
+    }
+  });
+
+  app.get("/api/vix", async (req, res) => {
+    try {
+      const timeframe = (req.query.timeframe as string) || "1Y";
+      const vixData = await storage.getVIXData(timeframe);
+      if (!vixData) {
+        return res.status(503).json({ error: "VIX data not available" });
+      }
+      res.json(vixData);
+    } catch (error) {
+      console.error("Error fetching VIX data:", error);
+      res.status(500).json({ error: "Failed to fetch VIX data" });
     }
   });
 
@@ -251,6 +671,43 @@ export async function registerRoutes(
       res.json(indexData);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch index data" });
+    }
+  });
+
+  app.get("/api/research/search", async (req, res) => {
+    try {
+      const query = req.query.query as string;
+
+      if (!query || query.trim().length === 0) {
+        return res.json([]);
+      }
+
+      const results = await searchStocks(query.trim());
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching stocks:", error);
+      res.status(500).json({ error: "Failed to search stocks" });
+    }
+  });
+
+  app.get("/api/research/financials", async (req, res) => {
+    try {
+      const symbol = req.query.symbol as string;
+
+      if (!symbol) {
+        return res.status(400).json({ error: "Symbol parameter is required" });
+      }
+
+      const financialData = await fetchFinancialData(symbol.toUpperCase());
+
+      if (!financialData) {
+        return res.status(404).json({ error: "Financial data not found for symbol" });
+      }
+
+      res.json(financialData);
+    } catch (error: any) {
+      console.error("Error fetching financial data:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch financial data" });
     }
   });
 

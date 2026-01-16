@@ -15,6 +15,8 @@ import BubbleWatchPage from "@/pages/bubble-watch";
 import News from "@/pages/news";
 import Research from "@/pages/research";
 import Accounts from "@/pages/accounts";
+import Dividends from "@/pages/dividends";
+import RiskIndicators from "@/pages/risk-indicators";
 
 function Router() {
   return (
@@ -26,6 +28,8 @@ function Router() {
       <Route path="/news" component={News} />
       <Route path="/research" component={Research} />
       <Route path="/accounts" component={Accounts} />
+      <Route path="/dividends" component={Dividends} />
+      <Route path="/risk-indicators" component={RiskIndicators} />
       <Route component={NotFound} />
     </Switch>
   );

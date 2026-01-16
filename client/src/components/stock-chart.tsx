@@ -48,12 +48,12 @@ export function StockChart({ stockData, indexData, timeframe, isLoading }: Stock
     return dataPoint;
   });
 
-  // Determine chart colors
+  // Determine chart colors - distinct colors for better differentiation
   const colors = {
-    stock: "hsl(var(--chart-1))",
-    SPY: "hsl(var(--chart-2))",
-    DJI: "hsl(var(--chart-3))",
-    IXIC: "hsl(var(--chart-4))",
+    stock: "#3b82f6",      // Blue - for searched stock
+    SPY: "#10b981",        // Green - S&P 500
+    DJI: "#f59e0b",        // Orange - DOW Jones
+    IXIC: "#8b5cf6",       // Purple - Nasdaq
   };
 
   const indexNames: Record<string, string> = {

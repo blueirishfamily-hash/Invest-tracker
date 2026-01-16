@@ -5,6 +5,7 @@ import { HoldingsTable } from "@/components/holdings-table";
 import { BenchmarkChart } from "@/components/benchmark-chart";
 import { IndustryChart } from "@/components/industry-chart";
 import { BubbleWatchCompact } from "@/components/bubble-watch";
+import { TopStocks } from "@/components/top-stocks";
 import { SEO } from "@/components/seo";
 import {
   Select,
@@ -81,6 +82,8 @@ export default function Dashboard() {
       <BubbleWatchCompact warnings={bubbleWarnings} isLoading={bubbleLoading} />
 
       <PortfolioMetricsCards metrics={metrics} isLoading={metricsLoading} />
+
+      <TopStocks timeframe={timeframe} />
 
       <div className="flex items-center justify-end gap-2 mb-2">
         <label htmlFor="timeframe-select" className="text-sm text-muted-foreground whitespace-nowrap">

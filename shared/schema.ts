@@ -81,6 +81,41 @@ export const industryAnalysisSchema = z.object({
 
 export type IndustryAnalysis = z.infer<typeof industryAnalysisSchema>;
 
+// Sector Company Schema (for companies within a sector)
+export const sectorCompanySchema = z.object({
+  ticker: z.string(),
+  name: z.string(),
+  value: z.number(),
+  percentage: z.number(), // Percentage within sector, not portfolio
+  growth: z.number(),
+});
+
+export type SectorCompany = z.infer<typeof sectorCompanySchema>;
+
+// Sector Analysis Schema
+export const sectorAnalysisSchema = z.object({
+  sector: z.string(),
+  totalValue: z.number(),
+  holdingsCount: z.number(),
+  percentage: z.number(), // Percentage of portfolio
+  averageGrowth: z.number(),
+  companies: z.array(sectorCompanySchema),
+});
+
+export type SectorAnalysis = z.infer<typeof sectorAnalysisSchema>;
+
+// Fear & Greed Index Schema
+export const fearGreedIndexSchema = z.object({
+  score: z.number().min(0).max(100),
+  rating: z.enum(["Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed"]),
+  timestamp: z.string(),
+  previousClose: z.number().optional(),
+  previousWeek: z.number().optional(),
+  previousMonth: z.number().optional(),
+});
+
+export type FearGreedIndex = z.infer<typeof fearGreedIndexSchema>;
+
 // Bubble Warning Schema
 export const bubbleWarningSchema = z.object({
   industry: z.string(),

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { PlaidLink } from "@/components/plaid-link";
+import { CSVUpload } from "@/components/csv-upload";
 import { SEO } from "@/components/seo";
 import { Link2, Trash2, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react";
 import type { PlaidAccount } from "@shared/schema";
@@ -116,10 +117,14 @@ export default function Accounts() {
           Connected Accounts
         </h1>
         <p className="text-muted-foreground" data-testid="text-page-description">
-          Connect your investment accounts to automatically sync holdings data
+          Connect your investment accounts to automatically sync holdings data, or import from CSV
         </p>
       </div>
 
+      {/* CSV Upload Section */}
+      <CSVUpload />
+
+      {/* Plaid Connection Section */}
       <div className="flex items-center justify-between gap-4">
         <PlaidLink
           onSuccess={() => {

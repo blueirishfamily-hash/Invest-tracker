@@ -7,6 +7,7 @@ import {
   type BenchmarkData,
   type BenchmarkChartData,
   type IndustryAnalysis,
+  type SectorAnalysis,
   type BubbleWarning,
   type NewsArticle,
   type StockData,
@@ -409,6 +410,183 @@ export class MemStorage implements IStorage {
     }
 
     return analysis.sort((a, b) => b.totalValue - a.totalValue);
+  }
+
+  async getSectorAnalysis(): Promise<SectorAnalysis[]> {
+    const holdings = await this.getHoldings();
+
+    const sectorMap = new Map<
+      string,
+      {
+        totalValue: number;
+        holdingsCount: number;
+        growthSum: number;
+        companies: Array<{ ticker: string; name: string; value: number; growth: number }>;
+      }
+    >();
+
+    for (const holding of holdings) {
+      const existing = sectorMap.get(holding.sector) || {
+        totalValue: 0,
+        holdingsCount: 0,
+        growthSum: 0,
+        companies: [],
+      };
+
+      existing.companies.push({
+        ticker: holding.ticker,
+        name: holding.name,
+        value: holding.currentValue,
+        growth: holding.growthRate30d,
+      });
+
+      sectorMap.set(holding.sector, {
+        totalValue: existing.totalValue + holding.currentValue,
+        holdingsCount: existing.holdingsCount + 1,
+        growthSum: existing.growthSum + holding.growthRate30d,
+        companies: existing.companies,
+      });
+    }
+
+    const totalPortfolioValue = holdings.reduce(
+      (sum, h) => sum + h.currentValue,
+      0
+    );
+
+    const analysis: SectorAnalysis[] = [];
+
+    // Convert Map to Array to avoid iteration issues
+    const sectorArray: Array<[
+      string,
+      {
+        totalValue: number;
+        holdingsCount: number;
+        growthSum: number;
+        companies: Array<{ ticker: string; name: string; value: number; growth: number }>;
+      }
+    ]> = [];
+    sectorMap.forEach((value, key) => {
+      sectorArray.push([key, value]);
+    });
+
+    for (const [sector, data] of sectorArray) {
+      // Calculate company percentages within sector (not portfolio)
+      const sectorTotal = data.totalValue;
+      const companies = data.companies.map((company) => ({
+        ...company,
+        percentage:
+          sectorTotal > 0 ? (company.value / sectorTotal) * 100 : 0,
+      }));
+
+      analysis.push({
+        sector,
+        totalValue: data.totalValue,
+        holdingsCount: data.holdingsCount,
+        percentage:
+          totalPortfolioValue > 0
+            ? (data.totalValue / totalPortfolioValue) * 100
+            : 0,
+        averageGrowth: data.holdingsCount > 0 ? data.growthSum / data.holdingsCount : 0,
+        companies,
+      });
+    }
+
+    return analysis.sort((a, b) => b.totalValue - a.totalValue);
+  }
+
+  async getVIXData(timeframe: string): Promise<{
+    current: number;
+    previous: number;
+    change: number;
+    changePercent: number;
+    timestamp: string;
+    historical: Array<{ date: string; value: number }>;
+  } | null> {
+    try {
+      const { globalQuote, timeSeriesDailyAdjusted } = await import("./alpha-vantage");
+      
+      // Fetch current VIX quote
+      const quote = await globalQuote("VIX");
+      if (!quote || !quote.price) {
+        return null;
+      }
+
+      // Fetch historical data
+      const outputsize = timeframe === "5Y" || timeframe === "MAX" ? "full" : "compact";
+      const historical = await timeSeriesDailyAdjusted("VIX", outputsize);
+
+      if (!historical || historical.length === 0) {
+        return null;
+      }
+
+      // Calculate start date based on timeframe
+      const now = new Date();
+      let startDate: Date;
+      
+      switch (timeframe) {
+        case "1M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+          break;
+        case "3M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 3);
+          break;
+        case "6M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 6);
+          break;
+        case "1Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          break;
+        case "5Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 5);
+          break;
+        case "MAX":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 5);
+          break;
+        default:
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+      }
+
+      // Filter historical data to timeframe
+      const filteredHistorical = historical
+        .filter((item) => {
+          const itemDate = new Date(item.date);
+          return itemDate >= startDate && itemDate <= now;
+        })
+        .map((item) => ({
+          date: item.date,
+          value: item.adjustedClose || item.close,
+        }))
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Get previous close (second to last or last if only one point)
+      const previousValue = filteredHistorical.length > 1
+        ? filteredHistorical[filteredHistorical.length - 2].value
+        : filteredHistorical[0]?.value || quote.price;
+
+      const current = quote.price;
+      const previous = previousValue;
+      const change = current - previous;
+      const changePercent = previous > 0 ? (change / previous) * 100 : 0;
+
+      return {
+        current,
+        previous,
+        change,
+        changePercent,
+        timestamp: new Date().toISOString(),
+        historical: filteredHistorical,
+      };
+    } catch (error) {
+      console.error("Error fetching VIX data:", error);
+      return null;
+    }
   }
 
   async getBubbleWarnings(): Promise<BubbleWarning[]> {

@@ -1,14 +1,21 @@
-import yahooFinance from "yahoo-finance2";
+import {
+  globalQuote,
+  timeSeriesDailyAdjusted,
+  timeSeriesIntraday,
+  symbolSearch,
+} from "./alpha-vantage";
 
 export interface HistoricalPrice {
   date: string;
   price: number;
 }
 
+// Map index symbols for Alpha Vantage
+// Note: Alpha Vantage uses different symbols than Yahoo Finance
 const indexSymbols: Record<string, string> = {
-  SPY: "^GSPC", // S&P 500
-  DJI: "^DJI",  // DOW Jones
-  IXIC: "^IXIC", // Nasdaq Composite
+  SPY: "SPY", // S&P 500 ETF (works directly)
+  DJI: "DIA", // DOW Jones ETF (or use ^DJI if available)
+  IXIC: "QQQ", // Nasdaq ETF (or use ^IXIC if available)
 };
 
 /**
@@ -20,12 +27,59 @@ export async function fetchHistoricalData(
   timeframe: string
 ): Promise<HistoricalPrice[] | null> {
   try {
+    // Map index symbols for Alpha Vantage
+    const alphaSymbol = indexSymbols[symbol] || symbol;
+    
+    // Determine output size based on timeframe
+    let outputsize: "compact" | "full" = "compact";
+    const needsFull = timeframe === "5Y" || timeframe === "MAX";
+    if (needsFull) {
+      outputsize = "full";
+    }
+    
+    // For very short timeframes (1D, 5D), use intraday data if available
+    // Otherwise use daily data
+    let timeSeriesData: Array<{
+      date: string;
+      close: number;
+      adjustedClose?: number;
+    }> = [];
+    
+    if (timeframe === "1D" || timeframe === "5D") {
+      try {
+        // Try intraday first for short timeframes
+        const intradayData = await timeSeriesIntraday(alphaSymbol, "60min", "compact");
+        if (intradayData && intradayData.length > 0) {
+          timeSeriesData = intradayData.map((item) => ({
+            date: item.date,
+            close: item.close,
+            adjustedClose: item.close,
+          }));
+        }
+      } catch (intradayError) {
+        // Fall back to daily if intraday fails
+        console.warn(`Intraday data not available for ${alphaSymbol}, using daily`);
+      }
+    }
+    
+    // Use daily data if intraday didn't work or for longer timeframes
+    if (timeSeriesData.length === 0) {
+      const dailyData = await timeSeriesDailyAdjusted(alphaSymbol, outputsize);
+      timeSeriesData = dailyData.map((item) => ({
+        date: item.date,
+        close: item.close,
+        adjustedClose: item.adjustedClose,
+      }));
+    }
+    
+    if (!timeSeriesData || timeSeriesData.length === 0) {
+      return null;
+    }
+    
+    // Calculate start date based on timeframe
     const now = new Date();
     let startDate: Date;
-    let period1: number;
-    let period2: number = Math.floor(now.getTime() / 1000);
-
-    // Convert timeframe to start date
+    
     switch (timeframe) {
       case "1D":
         startDate = new Date(now);
@@ -66,40 +120,38 @@ export async function fetchHistoricalData(
         startDate = new Date(now);
         startDate.setMonth(startDate.getMonth() - 1);
     }
-
-    period1 = Math.floor(startDate.getTime() / 1000);
-
-    // Map index symbols to Yahoo Finance symbols
-    const yahooSymbol = indexSymbols[symbol] || symbol;
-
-    const quote: any = await yahooFinance.historical(yahooSymbol, {
-      period1,
-      period2,
-      interval: "1d" as const,
+    
+    // Filter data to timeframe and normalize
+    const filteredData = timeSeriesData.filter((item) => {
+      const itemDate = new Date(item.date);
+      return itemDate >= startDate && itemDate <= now;
     });
-
-    if (!quote || !Array.isArray(quote) || quote.length === 0) {
+    
+    if (filteredData.length === 0) {
       return null;
     }
-
-    // Normalize data - get closing prices and index to start at 0
-    const prices = quote.map((item: any) => ({
-      date: new Date(item.date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
-      price: item.close || item.adjClose || 0,
-    }));
-
+    
+    // Normalize data - get closing prices and format dates
+    const prices = filteredData.map((item) => {
+      const itemDate = new Date(item.date);
+      return {
+        date: itemDate.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        price: item.adjustedClose || item.close || 0,
+      };
+    });
+    
     // Filter out invalid prices
-    const validPrices = prices.filter((p: any) => p.price > 0);
+    const validPrices = prices.filter((p) => p.price > 0);
     if (validPrices.length === 0) {
       return null;
     }
-
+    
     // Index to start at 0 (calculate percentage change from first price)
     const firstPrice = validPrices[0].price;
-    return validPrices.map((item: any) => ({
+    return validPrices.map((item) => ({
       date: item.date,
       price: ((item.price - firstPrice) / firstPrice) * 100,
     }));
@@ -117,16 +169,18 @@ export async function fetchCurrentQuote(symbol: string): Promise<{
   name: string;
 } | null> {
   try {
-    const yahooSymbol = indexSymbols[symbol] || symbol;
-    const quote: any = await yahooFinance.quote(yahooSymbol);
-
-    if (!quote || !quote.regularMarketPrice) {
+    // Map index symbols for Alpha Vantage
+    const alphaSymbol = indexSymbols[symbol] || symbol;
+    
+    const quote = await globalQuote(alphaSymbol);
+    
+    if (!quote || !quote.price || quote.price === 0) {
       return null;
     }
-
+    
     return {
-      price: quote.regularMarketPrice,
-      name: quote.longName || quote.shortName || symbol,
+      price: quote.price,
+      name: quote.symbol, // Alpha Vantage doesn't always return company name in GLOBAL_QUOTE
     };
   } catch (error) {
     console.error(`Error fetching quote for ${symbol}:`, error);
@@ -147,26 +201,96 @@ export async function searchStock(query: string): Promise<{
     if (directQuote) {
       return {
         symbol: query.toUpperCase(),
-        name: directQuote.name,
+        name: directQuote.name || query.toUpperCase(),
       };
     }
-
+    
     // If direct quote fails, try search
-    const searchResults: any = await yahooFinance.search(query, {
-      newsCount: 0,
-    });
-
-    if (searchResults?.quotes && Array.isArray(searchResults.quotes) && searchResults.quotes.length > 0) {
-      const firstResult = searchResults.quotes[0];
+    const searchResults = await symbolSearch(query);
+    
+    if (searchResults && searchResults.length > 0) {
+      // Filter for equities/stocks only (exclude indices, currencies, etc.)
+      const stockResults = searchResults.filter((quote) => {
+        const quoteType = quote.type?.toLowerCase() || "";
+        // Include Equity, ETF, Common Stock
+        return (
+          quoteType === "equity" ||
+          quoteType === "etf" ||
+          quoteType === "common stock"
+        );
+      });
+      
+      if (stockResults.length > 0) {
+        const firstResult = stockResults[0];
+        return {
+          symbol: firstResult.symbol || query.toUpperCase(),
+          name: firstResult.name || query,
+        };
+      }
+      
+      // Fallback to first result if no stock filter matches
+      const firstResult = searchResults[0];
       return {
         symbol: firstResult.symbol || query.toUpperCase(),
-        name: firstResult.longname || firstResult.shortname || query,
+        name: firstResult.name || query,
       };
     }
-
+    
     return null;
   } catch (error) {
     console.error(`Error searching for stock ${query}:`, error);
     return null;
+  }
+}
+
+/**
+ * Searches for multiple stock matches by ticker or name
+ * Returns array of potential matches
+ */
+export async function searchStocks(query: string): Promise<Array<{
+  symbol: string;
+  name: string;
+  exchange?: string;
+  quoteType?: string;
+}>> {
+  try {
+    // Try direct quote first
+    const directQuote = await fetchCurrentQuote(query);
+    if (directQuote) {
+      return [{
+        symbol: query.toUpperCase(),
+        name: directQuote.name || query.toUpperCase(),
+      }];
+    }
+    
+    // Search for multiple matches
+    const searchResults = await symbolSearch(query);
+    
+    if (searchResults && searchResults.length > 0) {
+      // Filter for equities/stocks only and limit to top 10 results
+      const stockResults = searchResults
+        .filter((quote) => {
+          const quoteType = quote.type?.toLowerCase() || "";
+          return (
+            quoteType === "equity" ||
+            quoteType === "etf" ||
+            quoteType === "common stock"
+          );
+        })
+        .slice(0, 10)
+        .map((quote) => ({
+          symbol: quote.symbol || query.toUpperCase(),
+          name: quote.name || quote.symbol || query,
+          exchange: quote.region,
+          quoteType: quote.type,
+        }));
+      
+      return stockResults.length > 0 ? stockResults : [];
+    }
+    
+    return [];
+  } catch (error) {
+    console.error(`Error searching for stocks ${query}:`, error);
+    return [];
   }
 }
