@@ -16,7 +16,7 @@ interface BenchmarkChartProps {
 
 function ChartSkeleton() {
   return (
-    <div className="h-[300px] flex items-center justify-center">
+    <div className="h-[400px] flex items-center justify-center">
       <div className="w-full h-full bg-muted animate-pulse rounded" />
     </div>
   );
@@ -192,7 +192,7 @@ export function BenchmarkChart({ data, chartData, isLoading, timeframe }: Benchm
           <CardTitle>Portfolio vs S&P 500 Benchmark</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+          <div className="h-[400px] flex items-center justify-center text-muted-foreground">
             No benchmark data available
           </div>
         </CardContent>
@@ -246,7 +246,7 @@ export function BenchmarkChart({ data, chartData, isLoading, timeframe }: Benchm
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[300px]">
+        <div className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={displayChartData}
@@ -262,7 +262,17 @@ export function BenchmarkChart({ data, chartData, isLoading, timeframe }: Benchm
               <YAxis
                 tick={{ fill: "hsl(var(--muted-foreground))" }}
                 axisLine={{ stroke: "hsl(var(--border))" }}
-                    tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`}
+                tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`}
+                domain={[
+                  (dataMin) => {
+                    const absMax = Math.max(Math.abs(dataMin || 0), 10); // Ensure minimum range
+                    return -absMax * 1.1; // Add 10% padding below 0
+                  },
+                  (dataMax) => {
+                    const absMax = Math.max(Math.abs(dataMax || 0), 10); // Ensure minimum range
+                    return absMax * 1.1; // Add 10% padding above 0
+                  },
+                ]}
               />
               <Tooltip
                 contentStyle={{

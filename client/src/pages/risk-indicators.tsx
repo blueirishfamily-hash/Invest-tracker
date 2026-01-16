@@ -386,22 +386,27 @@ export default function RiskIndicators() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="h-[300px]">
+                <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={vixData.historical}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
+                    <LineChart
+                      data={vixData.historical}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                       <XAxis
                         dataKey="date"
-                        stroke="hsl(var(--muted-foreground))"
                         tick={{ fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={{ stroke: "hsl(var(--border))" }}
+                        interval="preserveStartEnd"
                         tickFormatter={(value) => {
                           const date = new Date(value);
                           return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                         }}
                       />
                       <YAxis
-                        stroke="hsl(var(--muted-foreground))"
                         tick={{ fill: "hsl(var(--muted-foreground))" }}
+                        axisLine={{ stroke: "hsl(var(--border))" }}
+                        domain={[0, 'auto']}
                       />
                       <Tooltip
                         contentStyle={{
@@ -411,6 +416,10 @@ export default function RiskIndicators() {
                         }}
                         labelStyle={{ color: "hsl(var(--foreground))" }}
                         formatter={(value: number) => [value.toFixed(2), "VIX"]}
+                      />
+                      <Legend
+                        wrapperStyle={{ paddingTop: "20px" }}
+                        iconType="line"
                       />
                       <Line
                         type="monotone"
