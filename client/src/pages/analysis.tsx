@@ -1,49 +1,136 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IndustryChart, IndustryTable } from "@/components/industry-chart";
 import { BenchmarkChart } from "@/components/benchmark-chart";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Target, AlertCircle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
 import { SEO } from "@/components/seo";
-import type { SectorAnalysis, BenchmarkData, PortfolioMetrics } from "@shared/schema";
+import type { SectorAnalysis, BreakdownAnalysis, PortfolioMetrics } from "@shared/schema";
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 export default function Analysis() {
+  const [selectedBreakdownType, setSelectedBreakdownType] = useState<"sector" | "account" | "currency" | "region" | "assetType">("sector");
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>("1M");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  
+  // Fetch data based on breakdown type
   const { data: sectors, isLoading: sectorsLoading } = useQuery<SectorAnalysis[]>({
     queryKey: ["/api/sector-analysis"],
+    enabled: selectedBreakdownType === "sector",
   });
 
-  const { data: benchmark, isLoading: benchmarkLoading } = useQuery<BenchmarkData>({
-    queryKey: ["/api/benchmark"],
+  const { data: breakdownData, isLoading: breakdownLoading } = useQuery<BreakdownAnalysis[]>({
+    queryKey: [`/api/analysis/${selectedBreakdownType}`],
+    enabled: selectedBreakdownType !== "sector",
   });
+
+  // Use sector data or breakdown data based on selected type
+  const currentData = selectedBreakdownType === "sector" ? sectors : breakdownData;
+  const isLoadingBreakdown = selectedBreakdownType === "sector" ? sectorsLoading : breakdownLoading;
+
+  // Fetch category performance data
+  const { data: categoryPerformance, isLoading: categoryPerformanceLoading } = useQuery<Array<{
+    category: string;
+    data: Array<{ date: string; value: number }>;
+  }>>({
+    queryKey: ["/api/analysis/category-performance", selectedBreakdownType, selectedCategories, selectedTimeframe],
+    enabled: selectedCategories.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        type: selectedBreakdownType,
+        categories: selectedCategories.join(","),
+        timeframe: selectedTimeframe,
+      });
+      const response = await fetch(`/api/analysis/category-performance?${params}`);
+      if (!response.ok) throw new Error("Failed to fetch category performance");
+      return response.json();
+    },
+  });
+
+  const [expandedView, setExpandedView] = useState<"distribution" | "performance" | null>(null);
+  const [categorySelectionExpanded, setCategorySelectionExpanded] = useState(true);
+
+  // Update selected categories when breakdown data changes - select all by default
+  useEffect(() => {
+    if (currentData && currentData.length > 0 && selectedCategories.length === 0) {
+      // Auto-select all categories by default
+      const allCategories = currentData
+        .map(item => "sector" in item ? item.sector : item.category);
+      setSelectedCategories(allCategories);
+    }
+  }, [currentData, selectedCategories.length]);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<PortfolioMetrics>({
     queryKey: ["/api/portfolio/metrics"],
   });
 
-  const isLoading = sectorsLoading || benchmarkLoading || metricsLoading;
+  const isLoading = isLoadingBreakdown || metricsLoading;
 
-  const topPerformer = sectors?.reduce((prev, current) => 
+  // Helper function to get category name from data
+  const getCategoryName = (item: SectorAnalysis | BreakdownAnalysis): string => {
+    if ("sector" in item) return item.sector;
+    return item.category;
+  };
+
+  const topPerformer = currentData && currentData.length > 0 ? currentData.reduce((prev, current) => 
     current.averageGrowth > prev.averageGrowth ? current : prev
-  , sectors[0]);
+  , currentData[0]) : null;
 
-  const bottomPerformer = sectors?.reduce((prev, current) => 
+  const bottomPerformer = currentData && currentData.length > 0 ? currentData.reduce((prev, current) => 
     current.averageGrowth < prev.averageGrowth ? current : prev
-  , sectors[0]);
+  , currentData[0]) : null;
 
-  const mostConcentrated = sectors?.reduce((prev, current) => 
+  const mostConcentrated = currentData && currentData.length > 0 ? currentData.reduce((prev, current) => 
     current.percentage > prev.percentage ? current : prev
-  , sectors[0]);
+  , currentData[0]) : null;
+
+  const categoryLabel = selectedBreakdownType === "sector" ? "Sector" : 
+    selectedBreakdownType === "account" ? "Account" :
+    selectedBreakdownType === "currency" ? "Currency" :
+    selectedBreakdownType === "region" ? "Region" : "Asset Type";
+
+  // Generate calendar year options (last 5 completed years, oldest to newest)
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  // If we're not in December yet, the current year is not complete
+  const lastCompletedYear = currentMonth === 11 ? currentYear : currentYear - 1;
+  const calendarYears = Array.from({ length: 5 }, (_, i) => lastCompletedYear - (4 - i));
+
+  // Timeframe options
+  const timeframeOptions = [
+    { value: "1D", label: "1 Day" },
+    { value: "1W", label: "1 Week" },
+    { value: "1M", label: "1 Month" },
+    { value: "3M", label: "3 Months" },
+    { value: "6M", label: "6 Months" },
+    { value: "1Y", label: "1 Year" },
+    { value: "3Y", label: "3 Years" },
+    { value: "5Y", label: "5 Years" },
+    { value: "MAX", label: "Max" },
+    ...calendarYears.map(year => ({ value: year.toString(), label: year.toString() })),
+  ];
+
+  const handleCategoryToggle = (category: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(category) 
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
+  };
 
   return (
     <div className="p-6 space-y-6" data-testid="page-analysis">
       <SEO 
         title="Analysis" 
-        description="Deep dive into your portfolio performance with sector allocation, benchmark comparison, and performance insights." 
+        description="Deep dive into your portfolio performance with sector allocation and performance insights." 
       />
       
       <div className="flex flex-col gap-2">
@@ -69,7 +156,7 @@ export default function Analysis() {
             ) : topPerformer ? (
               <>
                 <div className="text-lg font-semibold truncate" data-testid="text-top-performer-name">
-                  {topPerformer.sector}
+                  {getCategoryName(topPerformer)}
                 </div>
                 <p className="text-chart-1 text-sm font-medium tabular-nums" data-testid="text-top-performer-growth">
                   {formatPercent(topPerformer.averageGrowth)}
@@ -94,7 +181,7 @@ export default function Analysis() {
             ) : bottomPerformer ? (
               <>
                 <div className="text-lg font-semibold truncate" data-testid="text-bottom-performer-name">
-                  {bottomPerformer.sector}
+                  {getCategoryName(bottomPerformer)}
                 </div>
                 <p 
                   className={`text-sm font-medium tabular-nums ${bottomPerformer.averageGrowth >= 0 ? "text-chart-1" : "text-destructive"}`}
@@ -122,7 +209,7 @@ export default function Analysis() {
             ) : mostConcentrated ? (
               <>
                 <div className="text-lg font-semibold truncate" data-testid="text-largest-position-name">
-                  {mostConcentrated.sector}
+                  {getCategoryName(mostConcentrated)}
                 </div>
                 <p className="text-muted-foreground text-sm tabular-nums" data-testid="text-largest-position-percent">
                   {mostConcentrated.percentage.toFixed(1)}% of portfolio
@@ -144,13 +231,13 @@ export default function Analysis() {
           <CardContent>
             {isLoading ? (
               <div className="h-10 bg-muted animate-pulse rounded" />
-            ) : sectors ? (
+            ) : currentData ? (
               <>
                 <div className="text-lg font-semibold" data-testid="text-sector-count">
-                  {sectors.length} Sectors
+                  {currentData.length} {categoryLabel}{currentData.length !== 1 ? "s" : ""}
                 </div>
                 <p className="text-muted-foreground text-sm" data-testid="text-diversification-status">
-                  {sectors.length >= 5 ? "Well diversified" : "Consider diversifying"}
+                  {currentData.length >= 5 ? "Well diversified" : "Consider diversifying"}
                 </p>
               </>
             ) : (
@@ -160,22 +247,156 @@ export default function Analysis() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <IndustryChart 
-          data={sectors} 
-          isLoading={sectorsLoading}
-          selectedSector={selectedSector}
-          onSectorSelect={setSelectedSector}
-        />
-        <BenchmarkChart data={benchmark} isLoading={benchmarkLoading} timeframe="1M" />
+      {/* Timeframe Selector */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-2">
+            {timeframeOptions.map(option => (
+              <Button
+                key={option.value}
+                variant={selectedTimeframe === option.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedTimeframe(option.value)}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Category Selection and Chart - Expandable */}
+      <div className={`grid gap-6 ${expandedView === "distribution" ? "grid-cols-1" : expandedView === "performance" ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2"}`}>
+        <div 
+          className={`transition-all ${expandedView === "distribution" ? "col-span-1" : expandedView === "performance" ? "hidden" : ""}`}
+        >
+          <IndustryChart 
+            data={currentData as SectorAnalysis[] | BreakdownAnalysis[]} 
+            isLoading={isLoadingBreakdown}
+            selectedSector={selectedSector}
+            onSectorSelect={setSelectedSector}
+            breakdownType={selectedBreakdownType}
+            isExpanded={expandedView === "distribution"}
+            onExpandClick={() => setExpandedView(expandedView === "distribution" ? null : "distribution")}
+            timeframe={selectedTimeframe}
+          />
+        </div>
+        
+        <div
+          className={`transition-all ${expandedView === "performance" ? "col-span-1" : expandedView === "distribution" ? "hidden" : ""}`}
+        >
+          {currentData && currentData.length > 0 ? (
+            <Card
+              className={expandedView === "performance" ? "cursor-pointer" : ""}
+              onClick={() => setExpandedView(expandedView === "performance" ? null : "performance")}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>{categoryLabel} Performance</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedView(expandedView === "performance" ? null : "performance");
+                    }}
+                  >
+                    {expandedView === "performance" ? (
+                      <Minimize2 className="h-4 w-4" />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </CardTitle>
+                <CardDescription>Select categories to compare performance</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-4" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-between"
+                    onClick={() => setCategorySelectionExpanded(!categorySelectionExpanded)}
+                  >
+                    <span>Select {categoryLabel}s</span>
+                    {categorySelectionExpanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                  {categorySelectionExpanded && (
+                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                      {currentData.map((item) => {
+                        const categoryName = "sector" in item ? item.sector : item.category;
+                        return (
+                          <div key={categoryName} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`category-${categoryName}`}
+                              checked={selectedCategories.includes(categoryName)}
+                              onCheckedChange={() => handleCategoryToggle(categoryName)}
+                            />
+                            <Label
+                              htmlFor={`category-${categoryName}`}
+                              className="text-sm font-normal cursor-pointer flex-1"
+                            >
+                              {categoryName} ({item.percentage.toFixed(1)}%)
+                            </Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <BenchmarkChart 
+                    categoryData={categoryPerformance}
+                    isLoading={categoryPerformanceLoading}
+                    timeframe={selectedTimeframe}
+                    title=""
+                    noCard={true}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent>
+                <div className="h-[400px] flex items-center justify-center text-muted-foreground">
+                  No data available
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
 
-      <IndustryTable 
-        data={sectors} 
-        isLoading={sectorsLoading}
-        selectedSector={selectedSector}
-        onSectorSelect={setSelectedSector}
-      />
+      {/* Breakdown Tabs - Above Table Only */}
+      <Tabs value={selectedBreakdownType} onValueChange={(value) => {
+        setSelectedBreakdownType(value as "sector" | "account" | "currency" | "region" | "assetType");
+        setSelectedSector(null); // Reset selection when switching tabs
+        setSelectedCategories([]); // Reset category selection to trigger auto-select all
+        setExpandedView(null); // Reset expanded view
+      }}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="sector">Sector</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
+          <TabsTrigger value="currency">Currency</TabsTrigger>
+          <TabsTrigger value="region">Region</TabsTrigger>
+          <TabsTrigger value="assetType">Asset Type</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={selectedBreakdownType}>
+          <IndustryTable 
+            data={currentData as SectorAnalysis[] | BreakdownAnalysis[]} 
+            isLoading={isLoadingBreakdown}
+            selectedSector={selectedSector}
+            onSectorSelect={setSelectedSector}
+            breakdownType={selectedBreakdownType}
+          />
+        </TabsContent>
+      </Tabs>
 
       <Card data-testid="card-insights">
         <CardHeader>
@@ -191,41 +412,22 @@ export default function Analysis() {
             </div>
           ) : (
             <div className="space-y-4">
-              {benchmark && metrics && (
-                <div className="p-4 rounded-lg bg-muted/50" data-testid="insight-benchmark">
-                  <h4 className="font-medium mb-1">Benchmark Comparison</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {benchmark.portfolioGrowth > benchmark.spyGrowth ? (
-                      <>
-                        Your portfolio is <span className="text-chart-1 font-medium">outperforming</span> the S&P 500 by{" "}
-                        <span className="font-medium tabular-nums">{(benchmark.portfolioGrowth - benchmark.spyGrowth).toFixed(2)}%</span> over the past 30 days.
-                      </>
-                    ) : (
-                      <>
-                        Your portfolio is <span className="text-chart-4 font-medium">underperforming</span> the S&P 500 by{" "}
-                        <span className="font-medium tabular-nums">{(benchmark.spyGrowth - benchmark.portfolioGrowth).toFixed(2)}%</span> over the past 30 days.
-                      </>
-                    )}
-                  </p>
-                </div>
-              )}
-
               {mostConcentrated && mostConcentrated.percentage > 30 && (
                 <div className="p-4 rounded-lg bg-chart-4/10 border border-chart-4/20" data-testid="insight-concentration">
                   <h4 className="font-medium mb-1 text-chart-4">Concentration Risk</h4>
                   <p className="text-sm text-muted-foreground">
-                    {mostConcentrated.sector} represents {mostConcentrated.percentage.toFixed(1)}% of your portfolio.
+                    {getCategoryName(mostConcentrated)} represents {mostConcentrated.percentage.toFixed(1)}% of your portfolio.
                     Consider rebalancing to reduce concentration risk.
                   </p>
                 </div>
               )}
 
-              {sectors && sectors.length < 4 && (
+              {currentData && currentData.length < 4 && (
                 <div className="p-4 rounded-lg bg-muted/50" data-testid="insight-diversification">
                   <h4 className="font-medium mb-1">Diversification Opportunity</h4>
                   <p className="text-sm text-muted-foreground">
-                    Your portfolio spans only {sectors.length} sector{sectors.length !== 1 ? "s" : ""}. 
-                    Adding exposure to more sectors could help reduce overall portfolio volatility.
+                    Your portfolio spans only {currentData.length} {categoryLabel.toLowerCase()}{currentData.length !== 1 ? "s" : ""}. 
+                    Adding exposure to more {categoryLabel.toLowerCase()}{categoryLabel.toLowerCase() !== "sectors" ? "s" : ""} could help reduce overall portfolio volatility.
                   </p>
                 </div>
               )}

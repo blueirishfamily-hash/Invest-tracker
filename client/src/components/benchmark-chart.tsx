@@ -1,17 +1,29 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import type { BenchmarkData } from "@shared/schema";
 
-type Timeframe = "1D" | "5D" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "MAX";
+type Timeframe = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "3Y" | "5Y" | "MAX" | string;
+
+interface CategoryPerformanceData {
+  category: string;
+  data: Array<{ date: string; value: number }>;
+}
 
 interface BenchmarkChartProps {
-  data: BenchmarkData | undefined;
+  data?: BenchmarkData | undefined;
   chartData?: {
     portfolio: Array<{ date: string; value: number }>;
     spy: Array<{ date: string; value: number }>;
   };
+  categoryData?: CategoryPerformanceData[];
   isLoading: boolean;
   timeframe: Timeframe;
+  title?: string;
+  isExpanded?: boolean;
+  onExpandClick?: () => void;
+  noCard?: boolean; // If true, don't render Card wrapper
 }
 
 function ChartSkeleton() {
@@ -171,25 +183,196 @@ function generateTimeSeriesData(
   return dataPoints;
 }
 
-export function BenchmarkChart({ data, chartData, isLoading, timeframe }: BenchmarkChartProps) {
+const COLORS = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+  "hsl(142 50% 45%)",
+  "hsl(200 60% 50%)",
+  "hsl(280 50% 50%)",
+];
+
+export function BenchmarkChart({ data, chartData, categoryData, isLoading, timeframe, title, isExpanded, onExpandClick, noCard = false }: BenchmarkChartProps) {
+  // If categoryData is provided, don't use S&P 500 default title
+  // Use provided title or empty string (when noCard=true, title should be empty to avoid showing header)
+  const chartTitle = categoryData ? (title || "") : (title || "Portfolio vs S&P 500 Benchmark");
+
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Portfolio vs S&P 500 Benchmark</CardTitle>
-        </CardHeader>
+    const content = (
+      <>
+        {!noCard && (
+          <CardHeader>
+            <CardTitle>{chartTitle}</CardTitle>
+          </CardHeader>
+        )}
         <CardContent>
           <ChartSkeleton />
         </CardContent>
+      </>
+    );
+    return noCard ? <>{content}</> : <Card>{content}</Card>;
+  }
+
+  // If category data is provided, use that instead of benchmark data
+  if (categoryData && categoryData.length > 0) {
+    // Merge all category data by date
+    const dateMap = new Map<string, Record<string, number>>();
+    
+    for (const category of categoryData) {
+      for (const point of category.data) {
+        if (!dateMap.has(point.date)) {
+          dateMap.set(point.date, {});
+        }
+        dateMap.get(point.date)![category.category] = point.value;
+      }
+    }
+
+    // Convert to array and sort by date
+    const mergedData = Array.from(dateMap.entries())
+      .map(([date, values]) => ({ date, ...values }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Calculate performance for each category
+    const categoryPerformance = categoryData.map(cat => {
+      if (cat.data.length === 0) return { category: cat.category, performance: 0 };
+      const start = cat.data[0].value;
+      const end = cat.data[cat.data.length - 1].value;
+      // Data is already indexed to 100, so performance is end - 100
+      return { category: cat.category, performance: end - 100 };
+    });
+
+    const chartContent = (
+      <>
+        {!noCard && (
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>{chartTitle}</span>
+              {onExpandClick && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExpandClick();
+                  }}
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+            </CardTitle>
+          </CardHeader>
+        )}
+        <CardContent>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={mergedData}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  tickFormatter={(value) => `${value >= 0 ? "+" : ""}${(value - 100).toFixed(2)}%`}
+                  domain={[
+                    (dataMin) => {
+                      const absMax = Math.max(Math.abs((dataMin || 100) - 100), 10);
+                      return 100 - absMax * 1.1;
+                    },
+                    (dataMax) => {
+                      const absMax = Math.max(Math.abs((dataMax || 100) - 100), 10);
+                      return 100 + absMax * 1.1;
+                    },
+                  ]}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    borderColor: "hsl(var(--border))",
+                    borderRadius: "var(--radius)",
+                  }}
+                  labelStyle={{ color: "hsl(var(--foreground))" }}
+                  formatter={(value: number, name: string) => {
+                    const percent = ((value as number) - 100).toFixed(2);
+                    return [`${percent >= 0 ? "+" : ""}${percent}%`, name];
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{ paddingTop: "20px" }}
+                  iconType="line"
+                />
+                {categoryData.map((cat, index) => (
+                  <Line
+                    key={cat.category}
+                    type="monotone"
+                    dataKey={cat.category}
+                    stroke={COLORS[index % COLORS.length]}
+                    strokeWidth={2}
+                    dot={false}
+                    name={cat.category}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
+            {categoryPerformance.map((perf, index) => (
+              <div key={perf.category} className="p-3 rounded-lg bg-muted/50">
+                <div className="text-sm text-muted-foreground truncate">{perf.category}</div>
+                <div className={`text-xl font-bold tabular-nums ${perf.performance >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                  {perf.performance >= 0 ? "+" : ""}{perf.performance.toFixed(2)}%
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </>
+    );
+    
+    return noCard ? <>{chartContent}</> : (
+      <Card className={onExpandClick ? "cursor-pointer" : ""} onClick={onExpandClick}>
+        {chartContent}
       </Card>
     );
   }
 
   if (!data) {
     return (
-      <Card>
+      <Card className={onExpandClick ? "cursor-pointer" : ""} onClick={onExpandClick}>
         <CardHeader>
-          <CardTitle>Portfolio vs S&P 500 Benchmark</CardTitle>
+          <CardTitle className="flex items-center justify-between">
+            <span>{chartTitle}</span>
+            {onExpandClick && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExpandClick();
+                }}
+              >
+                {isExpanded ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-[400px] flex items-center justify-center text-muted-foreground">

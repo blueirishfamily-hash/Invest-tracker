@@ -8,6 +8,7 @@ import {
   type BenchmarkChartData,
   type IndustryAnalysis,
   type SectorAnalysis,
+  type BreakdownAnalysis,
   type BubbleWarning,
   type NewsArticle,
   type StockData,
@@ -492,6 +493,547 @@ export class MemStorage implements IStorage {
     }
 
     return analysis.sort((a, b) => b.totalValue - a.totalValue);
+  }
+
+  /**
+   * Derives region from market/exchange name
+   */
+  private getRegionFromMarket(market: string | undefined): string {
+    if (!market) return "Unknown";
+    
+    const marketUpper = market.toUpperCase();
+    
+    // US markets
+    if (marketUpper.includes("NYSE") || marketUpper.includes("NASDAQ") || marketUpper.includes("AMEX") || 
+        marketUpper.includes("OTC") || marketUpper.includes("US")) {
+      return "US";
+    }
+    
+    // European markets
+    if (marketUpper.includes("LSE") || marketUpper.includes("XETR") || marketUpper.includes("EPA") || 
+        marketUpper.includes("FWB") || marketUpper.includes("LON") || marketUpper.includes("EUR") ||
+        marketUpper.includes("XPAR") || marketUpper.includes("MIL") || marketUpper.includes("AMS")) {
+      return "Europe";
+    }
+    
+    // Asian markets
+    if (marketUpper.includes("TSE") || marketUpper.includes("HKG") || marketUpper.includes("SSE") ||
+        marketUpper.includes("SZSE") || marketUpper.includes("NSE") || marketUpper.includes("BSE") ||
+        marketUpper.includes("ASX") || marketUpper.includes("KRX") || marketUpper.includes("TWSE")) {
+      return "Asia";
+    }
+    
+    return "Unknown";
+  }
+
+  async getBreakdownAnalysis(
+    field: "sector" | "account" | "currency" | "region" | "assetType"
+  ): Promise<BreakdownAnalysis[]> {
+    const holdings = await this.getHoldings();
+
+    const categoryMap = new Map<
+      string,
+      {
+        totalValue: number;
+        holdingsCount: number;
+        growthSum: number;
+        items: Array<{ ticker: string; name: string; value: number; growth: number }>;
+      }
+    >();
+
+    for (const holding of holdings) {
+      // Get category value based on field
+      let category: string;
+      switch (field) {
+        case "sector":
+          category = holding.sector || "Unknown";
+          break;
+        case "account":
+          category = holding.account || "Unknown";
+          break;
+        case "currency":
+          category = holding.currency || "USD";
+          break;
+        case "region":
+          // Use region field if available, otherwise derive from market
+          category = holding.region || this.getRegionFromMarket(holding.market);
+          break;
+        case "assetType":
+          category = holding.assetType || "Equity";
+          break;
+        default:
+          category = "Unknown";
+      }
+
+      const existing = categoryMap.get(category) || {
+        totalValue: 0,
+        holdingsCount: 0,
+        growthSum: 0,
+        items: [],
+      };
+
+      existing.items.push({
+        ticker: holding.ticker,
+        name: holding.name,
+        value: holding.currentValue,
+        growth: holding.growthRate30d,
+      });
+
+      categoryMap.set(category, {
+        totalValue: existing.totalValue + holding.currentValue,
+        holdingsCount: existing.holdingsCount + 1,
+        growthSum: existing.growthSum + holding.growthRate30d,
+        items: existing.items,
+      });
+    }
+
+    const totalPortfolioValue = holdings.reduce(
+      (sum, h) => sum + h.currentValue,
+      0
+    );
+
+    const analysis: BreakdownAnalysis[] = [];
+
+    // Convert Map to Array
+    const categoryArray: Array<[
+      string,
+      {
+        totalValue: number;
+        holdingsCount: number;
+        growthSum: number;
+        items: Array<{ ticker: string; name: string; value: number; growth: number }>;
+      }
+    ]> = [];
+    categoryMap.forEach((value, key) => {
+      categoryArray.push([key, value]);
+    });
+
+    for (const [category, data] of categoryArray) {
+      // Calculate item percentages within category
+      const categoryTotal = data.totalValue;
+      const items = data.items.map((item) => ({
+        ...item,
+        percentage: categoryTotal > 0 ? (item.value / categoryTotal) * 100 : 0,
+      }));
+
+      analysis.push({
+        category,
+        totalValue: data.totalValue,
+        holdingsCount: data.holdingsCount,
+        percentage:
+          totalPortfolioValue > 0
+            ? (data.totalValue / totalPortfolioValue) * 100
+            : 0,
+        averageGrowth: data.holdingsCount > 0 ? data.growthSum / data.holdingsCount : 0,
+        items,
+      });
+    }
+
+    return analysis.sort((a, b) => b.totalValue - a.totalValue);
+  }
+
+  /**
+   * Get historical performance data for selected categories
+   */
+  async getCategoryPerformance(
+    type: "sector" | "account" | "currency" | "region" | "assetType",
+    categories: string[],
+    timeframe: string
+  ): Promise<Array<{
+    category: string;
+    data: Array<{ date: string; value: number }>;
+  }>> {
+    const holdings = await this.getHoldings();
+    
+    // Calculate date range based on timeframe
+    const now = new Date();
+    let startDate: Date;
+    let endDate: Date = now;
+    
+    // Check if timeframe is a calendar year (e.g., "2023")
+    const yearMatch = timeframe.match(/^\d{4}$/);
+    if (yearMatch) {
+      const year = parseInt(yearMatch[0], 10);
+      startDate = new Date(year, 0, 1); // Jan 1
+      endDate = new Date(year, 11, 31, 23, 59, 59); // Dec 31
+    } else {
+      // Relative timeframes
+      switch (timeframe) {
+        case "1D":
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 1);
+          break;
+        case "1W":
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 7);
+          break;
+        case "1M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+          break;
+        case "3M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 3);
+          break;
+        case "6M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 6);
+          break;
+        case "1Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          break;
+        case "3Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 3);
+          break;
+        case "5Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 5);
+          break;
+        case "MAX":
+          startDate = new Date(0);
+          break;
+        default:
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+      }
+    }
+
+    // Group holdings by category
+    const categoryHoldingsMap = new Map<string, Holding[]>();
+    
+    for (const holding of holdings) {
+      let categoryValue: string;
+      switch (type) {
+        case "sector":
+          categoryValue = holding.sector || "Unknown";
+          break;
+        case "account":
+          categoryValue = holding.account || "Unknown";
+          break;
+        case "currency":
+          categoryValue = holding.currency || "USD";
+          break;
+        case "region":
+          categoryValue = holding.region || this.getRegionFromMarket(holding.market);
+          break;
+        case "assetType":
+          categoryValue = holding.assetType || "Equity";
+          break;
+        default:
+          categoryValue = "Unknown";
+      }
+      
+      if (categories.includes(categoryValue)) {
+        const existing = categoryHoldingsMap.get(categoryValue) || [];
+        existing.push(holding);
+        categoryHoldingsMap.set(categoryValue, existing);
+      }
+    }
+
+    // Fetch historical data for each category
+    const results: Array<{
+      category: string;
+      data: Array<{ date: string; value: number }>;
+    }> = [];
+
+    for (const category of categories) {
+      const categoryHoldings = categoryHoldingsMap.get(category) || [];
+      
+      if (categoryHoldings.length === 0) {
+        results.push({ category, data: [] });
+        continue;
+      }
+
+      // Fetch historical data for all holdings in this category
+      const historicalDataMap = new Map<string, number>(); // date -> total value
+      
+      // Get unique dates from all holdings
+      const allDates = new Set<string>();
+      
+      for (const holding of categoryHoldings) {
+        try {
+          // Fetch raw historical data directly from Alpha Vantage to get ISO dates
+          const { timeSeriesDailyAdjusted } = await import("./alpha-vantage");
+          const fetchTimeframe = /^\d{4}$/.test(timeframe) ? "full" : (timeframe === "MAX" || timeframe === "5Y" || timeframe === "3Y" || timeframe === "1Y" ? "full" : "compact");
+          
+          const rawData = await timeSeriesDailyAdjusted(holding.ticker, fetchTimeframe);
+          if (rawData && rawData.length > 0) {
+            for (const point of rawData) {
+              // Date is in YYYY-MM-DD format from Alpha Vantage
+              const dateStr = point.date;
+              const pointDate = new Date(dateStr + "T00:00:00"); // Set to midnight for consistent comparison
+              const normalizedStartDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+              const normalizedEndDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+              
+              if (pointDate >= normalizedStartDate && pointDate <= normalizedEndDate) {
+                allDates.add(dateStr);
+                
+                const currentValue = historicalDataMap.get(dateStr) || 0;
+                const holdingValue = (point.adjustedClose || point.close || 0) * holding.quantity;
+                historicalDataMap.set(dateStr, currentValue + holdingValue);
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching historical data for ${holding.ticker}:`, error);
+        }
+      }
+
+      // Convert to array and sort by date
+      const data = Array.from(allDates)
+        .sort()
+        .map(date => ({
+          date,
+          value: historicalDataMap.get(date) || 0,
+        }));
+
+      // Index to starting value (100)
+      if (data.length > 0) {
+        const startValue = data[0].value;
+        const indexedData = data.map(point => ({
+          date: point.date,
+          value: startValue > 0 ? (point.value / startValue) * 100 : 100,
+        }));
+        results.push({ category, data: indexedData });
+      } else {
+        results.push({ category, data: [] });
+      }
+    }
+
+    return results;
+  }
+
+  async getHistoricalDistribution(
+    type: "sector" | "account" | "currency" | "region" | "assetType",
+    timeframe: string
+  ): Promise<Array<{
+    date: string;
+    categories: Record<string, number>;
+  }>> {
+    const holdings = await this.getHoldings();
+    
+    // Calculate date range based on timeframe
+    const now = new Date();
+    let startDate: Date;
+    let endDate: Date = now;
+    
+    // Check if timeframe is a calendar year (e.g., "2023")
+    const yearMatch = timeframe.match(/^\d{4}$/);
+    if (yearMatch) {
+      const year = parseInt(yearMatch[0], 10);
+      startDate = new Date(year, 0, 1); // Jan 1
+      endDate = new Date(year, 11, 31, 23, 59, 59); // Dec 31
+    } else {
+      // Relative timeframes
+      switch (timeframe) {
+        case "1D":
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 1);
+          break;
+        case "1W":
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 7);
+          break;
+        case "1M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+          break;
+        case "3M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 3);
+          break;
+        case "6M":
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 6);
+          break;
+        case "1Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 1);
+          break;
+        case "3Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 3);
+          break;
+        case "5Y":
+          startDate = new Date(now);
+          startDate.setFullYear(startDate.getFullYear() - 5);
+          break;
+        case "MAX":
+          startDate = new Date(0);
+          break;
+        default:
+          startDate = new Date(now);
+          startDate.setMonth(startDate.getMonth() - 1);
+      }
+    }
+
+    // Calculate interval duration to show 4-5 bars
+    const durationMs = endDate.getTime() - startDate.getTime();
+    let intervalMs: number;
+    let numBars: number;
+
+    if (timeframe === "1D") {
+      // Single bar for 1D
+      numBars = 1;
+      intervalMs = 0; // Use endDate only
+    } else {
+      // Target 4-5 bars, prefer 4
+      numBars = 4;
+      intervalMs = durationMs / (numBars - 1);
+      
+      // Round to sensible intervals
+      const daysPerInterval = intervalMs / (1000 * 60 * 60 * 24);
+      if (daysPerInterval < 2) {
+        // Less than 2 days per interval - use days
+        intervalMs = 1 * 24 * 60 * 60 * 1000; // 1 day
+      } else if (daysPerInterval < 8) {
+        // 2-7 days - use days (round to nearest day)
+        intervalMs = Math.round(daysPerInterval) * 24 * 60 * 60 * 1000;
+      } else if (daysPerInterval < 35) {
+        // 1-5 weeks - use weeks (round to nearest week)
+        intervalMs = Math.round(daysPerInterval / 7) * 7 * 24 * 60 * 60 * 1000;
+      } else if (daysPerInterval < 100) {
+        // 1-3 months - use months (round to nearest month, ~30 days)
+        intervalMs = Math.round(daysPerInterval / 30) * 30 * 24 * 60 * 60 * 1000;
+      } else if (daysPerInterval < 400) {
+        // 3-13 months - use quarters (round to nearest quarter, ~90 days)
+        intervalMs = Math.round(daysPerInterval / 90) * 90 * 24 * 60 * 60 * 1000;
+      } else {
+        // More than a year - use years (round to nearest year, ~365 days)
+        intervalMs = Math.round(daysPerInterval / 365) * 365 * 24 * 60 * 60 * 1000;
+      }
+    }
+
+    // Generate interval dates
+    const intervalDates: Date[] = [];
+    if (timeframe === "1D") {
+      // Single point at end
+      intervalDates.push(endDate);
+    } else {
+      // Start from startDate and add intervals
+      let currentDate = new Date(startDate);
+      while (currentDate <= endDate) {
+        intervalDates.push(new Date(currentDate));
+        if (intervalMs === 0) break;
+        currentDate = new Date(currentDate.getTime() + intervalMs);
+      }
+      // Ensure we have endDate as the last point
+      if (intervalDates.length === 0 || intervalDates[intervalDates.length - 1].getTime() < endDate.getTime() - (24 * 60 * 60 * 1000)) {
+        intervalDates.push(endDate);
+      }
+    }
+
+    // Group holdings by category
+    const categoryMap = new Map<string, Holding[]>();
+    
+    for (const holding of holdings) {
+      let categoryValue: string;
+      switch (type) {
+        case "sector":
+          categoryValue = holding.sector || "Unknown";
+          break;
+        case "account":
+          categoryValue = holding.account || "Unknown";
+          break;
+        case "currency":
+          categoryValue = holding.currency || "USD";
+          break;
+        case "region":
+          categoryValue = holding.region || this.getRegionFromMarket(holding.market);
+          break;
+        case "assetType":
+          categoryValue = holding.assetType || "Equity";
+          break;
+        default:
+          categoryValue = "Unknown";
+      }
+      
+      const existing = categoryMap.get(categoryValue) || [];
+      existing.push(holding);
+      categoryMap.set(categoryValue, existing);
+    }
+
+    // Fetch historical data once per holding (more efficient)
+    const holdingHistoricalData = new Map<string, Array<{
+      date: string;
+      price: number;
+    }>>();
+
+    for (const holding of holdings) {
+      try {
+        const { timeSeriesDailyAdjusted } = await import("./alpha-vantage");
+        const fetchTimeframe = /^\d{4}$/.test(timeframe) || timeframe === "MAX" || timeframe === "5Y" || timeframe === "3Y" || timeframe === "1Y" ? "full" : "compact";
+        
+        const rawData = await timeSeriesDailyAdjusted(holding.ticker, fetchTimeframe);
+        if (rawData && rawData.length > 0) {
+          // Store price data indexed by date
+          const priceMap = rawData.map(point => ({
+            date: point.date,
+            price: point.adjustedClose || point.close || 0,
+          }));
+          holdingHistoricalData.set(holding.ticker, priceMap);
+        }
+      } catch (error) {
+        console.error(`Error fetching historical data for ${holding.ticker}:`, error);
+      }
+    }
+
+    // Calculate distribution for each interval date
+    const results: Array<{ date: string; categories: Record<string, number> }> = [];
+    
+    for (const intervalDate of intervalDates) {
+      const categoryValues: Record<string, number> = {}; // category -> total value
+      let totalPortfolioValue = 0;
+
+      // For each category, calculate total value at this date
+      for (const [category, categoryHoldings] of categoryMap.entries()) {
+        let categoryValue = 0;
+
+        for (const holding of categoryHoldings) {
+          const historicalData = holdingHistoricalData.get(holding.ticker);
+          if (historicalData && historicalData.length > 0) {
+            // Find the closest date to intervalDate (before or equal to it)
+            const intervalDateStr = intervalDate.toISOString().split('T')[0];
+            let closestPrice = 0;
+            let closestDateStr: string | null = null;
+            
+            for (const point of historicalData) {
+              if (point.price > 0 && point.date <= intervalDateStr) {
+                if (!closestDateStr || point.date > closestDateStr) {
+                  closestDateStr = point.date;
+                  closestPrice = point.price;
+                }
+              }
+            }
+            
+            if (closestPrice > 0) {
+              const holdingValue = closestPrice * holding.quantity;
+              categoryValue += holdingValue;
+            }
+          }
+        }
+
+        if (categoryValue > 0) {
+          categoryValues[category] = categoryValue;
+          totalPortfolioValue += categoryValue;
+        }
+      }
+
+      // Convert values to percentages
+      const categories: Record<string, number> = {};
+      for (const [category, value] of Object.entries(categoryValues)) {
+        categories[category] = totalPortfolioValue > 0 ? (value / totalPortfolioValue) * 100 : 0;
+      }
+
+      results.push({
+        date: intervalDate.toISOString().split('T')[0], // YYYY-MM-DD format
+        categories,
+      });
+    }
+
+    return results;
   }
 
   async getVIXData(timeframe: string): Promise<{

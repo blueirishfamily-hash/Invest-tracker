@@ -29,6 +29,11 @@ export const holdingsSchema = z.object({
   growthRate30d: z.number(),
   sector: z.string(),
   industry: z.string(),
+  account: z.string().optional(),
+  currency: z.string().optional(),
+  market: z.string().optional(),
+  region: z.string().optional(),
+  assetType: z.string().optional(),
 });
 
 export type Holding = z.infer<typeof holdingsSchema>;
@@ -81,18 +86,34 @@ export const industryAnalysisSchema = z.object({
 
 export type IndustryAnalysis = z.infer<typeof industryAnalysisSchema>;
 
-// Sector Company Schema (for companies within a sector)
-export const sectorCompanySchema = z.object({
+// Breakdown Item Schema (for items within a breakdown category)
+export const breakdownItemSchema = z.object({
   ticker: z.string(),
   name: z.string(),
   value: z.number(),
-  percentage: z.number(), // Percentage within sector, not portfolio
+  percentage: z.number(), // Percentage within category, not portfolio
   growth: z.number(),
 });
 
-export type SectorCompany = z.infer<typeof sectorCompanySchema>;
+export type BreakdownItem = z.infer<typeof breakdownItemSchema>;
 
-// Sector Analysis Schema
+// Sector Company Schema (for backward compatibility)
+export const sectorCompanySchema = breakdownItemSchema;
+export type SectorCompany = BreakdownItem;
+
+// Generic Breakdown Analysis Schema (reusable for all breakdown types)
+export const breakdownAnalysisSchema = z.object({
+  category: z.string(), // e.g., "Technology", "Fidelity 401k", "USD", "NYSE", "Equity"
+  totalValue: z.number(),
+  holdingsCount: z.number(),
+  percentage: z.number(), // Percentage of portfolio
+  averageGrowth: z.number(),
+  items: z.array(breakdownItemSchema), // Companies/holdings within this category
+});
+
+export type BreakdownAnalysis = z.infer<typeof breakdownAnalysisSchema>;
+
+// Sector Analysis Schema (for backward compatibility)
 export const sectorAnalysisSchema = z.object({
   sector: z.string(),
   totalValue: z.number(),
@@ -211,6 +232,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 4.2,
     sector: "Technology",
     industry: "Consumer Electronics",
+    account: "Fidelity 401k",
+    currency: "USD",
+    market: "NASDAQ",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "2",
@@ -223,6 +249,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 6.8,
     sector: "Technology",
     industry: "Software—Infrastructure",
+    account: "Fidelity 401k",
+    currency: "USD",
+    market: "NASDAQ",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "3",
@@ -235,6 +266,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 3.5,
     sector: "Communication Services",
     industry: "Internet Content & Information",
+    account: "Robinhood",
+    currency: "USD",
+    market: "NASDAQ",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "4",
@@ -247,6 +283,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 5.2,
     sector: "Consumer Cyclical",
     industry: "Internet Retail",
+    account: "Robinhood",
+    currency: "USD",
+    market: "NASDAQ",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "5",
@@ -259,6 +300,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 12.4,
     sector: "Consumer Cyclical",
     industry: "Auto Manufacturers",
+    account: "TD Ameritrade",
+    currency: "USD",
+    market: "NASDAQ",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "6",
@@ -271,6 +317,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 18.6,
     sector: "Technology",
     industry: "Semiconductors",
+    account: "TD Ameritrade",
+    currency: "USD",
+    market: "NASDAQ",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "7",
@@ -283,6 +334,11 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 2.1,
     sector: "Financial Services",
     industry: "Banks—Diversified",
+    account: "Manual",
+    currency: "USD",
+    market: "NYSE",
+    region: "US",
+    assetType: "Equity",
   },
   {
     id: "8",
@@ -295,5 +351,10 @@ export const demoHoldings: Holding[] = [
     growthRate30d: 1.4,
     sector: "Healthcare",
     industry: "Drug Manufacturers",
+    account: "Manual",
+    currency: "USD",
+    market: "NYSE",
+    region: "US",
+    assetType: "Equity",
   },
 ];

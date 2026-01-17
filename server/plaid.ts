@@ -39,7 +39,7 @@ export async function createLinkToken(userId: string): Promise<string | null> {
       user: {
         client_user_id: userId,
       },
-      client_name: "NexusInvest",
+      client_name: "Sila",
       products: [Products.Investments, Products.InvestmentsAuth] as Products[],
       country_codes: [CountryCode.Us],
       language: "en",

@@ -8,6 +8,10 @@ export interface ParsedHolding {
   sector?: string;
   industry?: string;
   purchaseDate?: string;
+  account?: string;
+  currency?: string;
+  market?: string;
+  assetType?: string;
   errors?: string[];
 }
 
@@ -71,6 +75,25 @@ function mapColumnToField(normalizedName: string): string | null {
     purchasedate: "purchaseDate",
     date: "purchaseDate",
     purchase: "purchaseDate",
+    
+    // Account
+    account: "account",
+    
+    // Currency
+    currency: "currency",
+    
+    // Market/Exchange
+    market: "market",
+    exchange: "market",
+    
+    // Region
+    region: "region",
+    
+    // Asset Type
+    assettype: "assetType",
+    asset: "assetType",
+    type: "assetType",
+    securitytype: "assetType",
   };
 
   return columnMap[normalizedName] || null;
@@ -226,6 +249,52 @@ export function parseCSV(csvContent: string): ParseResult {
         }
       }
 
+      // Extract account (default to "Manual" if not provided)
+      if (columnMapping["account"]) {
+        const accountValue = row[columnMapping["account"]];
+        if (accountValue && typeof accountValue === "string") {
+          holding.account = accountValue.trim();
+        }
+      } else {
+        holding.account = "Manual";
+      }
+
+      // Extract currency (default to "USD" if not provided)
+      if (columnMapping["currency"]) {
+        const currencyValue = row[columnMapping["currency"]];
+        if (currencyValue && typeof currencyValue === "string") {
+          holding.currency = currencyValue.trim().toUpperCase();
+        }
+      } else {
+        holding.currency = "USD";
+      }
+
+      // Extract market/exchange (optional, no default)
+      if (columnMapping["market"]) {
+        const marketValue = row[columnMapping["market"]];
+        if (marketValue && typeof marketValue === "string") {
+          holding.market = marketValue.trim();
+        }
+      }
+
+      // Extract region (optional, will be derived from market if not provided)
+      if (columnMapping["region"]) {
+        const regionValue = row[columnMapping["region"]];
+        if (regionValue && typeof regionValue === "string") {
+          holding.region = regionValue.trim();
+        }
+      }
+
+      // Extract asset type (default to "Equity" if not provided)
+      if (columnMapping["assetType"]) {
+        const assetTypeValue = row[columnMapping["assetType"]];
+        if (assetTypeValue && typeof assetTypeValue === "string") {
+          holding.assetType = assetTypeValue.trim();
+        }
+      } else {
+        holding.assetType = "Equity";
+      }
+
       // If cost basis appears to be total (much larger than typical per-share price),
       // divide by quantity to get per-share cost
       if (holding.quantity > 0 && holding.costBasis > holding.quantity * 1000) {
@@ -258,6 +327,11 @@ export function parseCSV(csvContent: string): ParseResult {
         if (!existing.name && holding.name) existing.name = holding.name;
         if (!existing.sector && holding.sector) existing.sector = holding.sector;
         if (!existing.industry && holding.industry) existing.industry = holding.industry;
+        if (!existing.account && holding.account) existing.account = holding.account;
+        if (!existing.currency && holding.currency) existing.currency = holding.currency;
+        if (!existing.market && holding.market) existing.market = holding.market;
+        if (!existing.region && holding.region) existing.region = holding.region;
+        if (!existing.assetType && holding.assetType) existing.assetType = holding.assetType;
       } else {
         tickerMap.set(holding.ticker, { ...holding });
       }

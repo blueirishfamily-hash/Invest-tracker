@@ -591,6 +591,69 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/analysis/:type", async (req, res) => {
+    try {
+      const type = req.params.type as "sector" | "account" | "currency" | "region" | "assetType";
+      
+      if (!["sector", "account", "currency", "region", "assetType"].includes(type)) {
+        return res.status(400).json({ error: "Invalid breakdown type. Must be one of: sector, account, currency, region, assetType" });
+      }
+
+      const analysis = await storage.getBreakdownAnalysis(type);
+      res.json(analysis);
+    } catch (error) {
+      console.error("Error fetching breakdown analysis:", error);
+      res.status(500).json({ error: "Failed to fetch breakdown analysis" });
+    }
+  });
+
+  app.get("/api/analysis/category-performance", async (req, res) => {
+    try {
+      const type = req.query.type as "sector" | "account" | "currency" | "region" | "assetType";
+      const categoriesParam = req.query.categories as string;
+      const timeframe = (req.query.timeframe as string) || "1M";
+      
+      if (!type || !categoriesParam) {
+        return res.status(400).json({ error: "type and categories parameters are required" });
+      }
+
+      if (!["sector", "account", "currency", "region", "assetType"].includes(type)) {
+        return res.status(400).json({ error: "Invalid breakdown type. Must be one of: sector, account, currency, region, assetType" });
+      }
+
+      const categories = Array.isArray(categoriesParam) 
+        ? categoriesParam 
+        : categoriesParam.split(",").map(c => c.trim());
+
+      const performance = await storage.getCategoryPerformance(type, categories, timeframe);
+      res.json(performance);
+    } catch (error) {
+      console.error("Error fetching category performance:", error);
+      res.status(500).json({ error: "Failed to fetch category performance" });
+    }
+  });
+
+  app.get("/api/analysis/historical-distribution", async (req, res) => {
+    try {
+      const type = req.query.type as "sector" | "account" | "currency" | "region" | "assetType";
+      const timeframe = (req.query.timeframe as string) || "1M";
+      
+      if (!type) {
+        return res.status(400).json({ error: "type parameter is required" });
+      }
+
+      if (!["sector", "account", "currency", "region", "assetType"].includes(type)) {
+        return res.status(400).json({ error: "Invalid breakdown type. Must be one of: sector, account, currency, region, assetType" });
+      }
+
+      const distribution = await storage.getHistoricalDistribution(type, timeframe);
+      res.json(distribution);
+    } catch (error) {
+      console.error("Error fetching category performance:", error);
+      res.status(500).json({ error: "Failed to fetch category performance" });
+    }
+  });
+
   app.get("/api/fear-greed", async (_req, res) => {
     try {
       const { getFearGreedIndex } = await import("./fear-greed");
@@ -815,6 +878,10 @@ export async function registerRoutes(
         growthRate30d: number;
         sector: string;
         industry: string;
+        account?: string;
+        currency?: string;
+        market?: string;
+        assetType?: string;
       }> = [];
 
       for (const plaidHolding of plaidHoldings) {
@@ -851,6 +918,10 @@ export async function registerRoutes(
           growthRate30d,
           sector: plaidHolding.sector || "Unknown",
           industry: plaidHolding.industry || "Unknown",
+          account: account.accountName || account.institutionName || "Unknown",
+          currency: "USD", // Default to USD, can be enhanced based on account
+          market: undefined, // Can be derived from ticker if needed
+          assetType: "Equity", // Default to Equity, can be enhanced based on security type
         };
 
         if (existingHolding) {
@@ -909,6 +980,10 @@ export async function registerRoutes(
               growthRate30d,
               sector: plaidHolding.sector || "Unknown",
               industry: plaidHolding.industry || "Unknown",
+              account: account.accountName || account.institutionName || "Unknown",
+              currency: "USD", // Default to USD, can be enhanced based on account
+              market: undefined, // Can be derived from ticker if needed
+              assetType: "Equity", // Default to Equity, can be enhanced based on security type
             };
 
             const existingHolding = Array.from(storage["holdings"].values()).find(

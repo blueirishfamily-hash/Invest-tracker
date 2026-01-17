@@ -72,7 +72,7 @@ export function AppSidebar() {
             <TrendingUp className="h-6 w-6" />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-semibold">NexusInvest</span>
+            <span className="text-lg font-semibold">Sila</span>
             <span className="text-xs text-muted-foreground">Portfolio Tracker</span>
           </div>
         </div>

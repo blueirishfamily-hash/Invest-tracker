@@ -7,7 +7,7 @@ interface SEOProps {
 
 export function SEO({ title, description }: SEOProps) {
   useEffect(() => {
-    document.title = `${title} | NexusInvest`;
+    document.title = `${title} | Sila`;
     
     let metaDescription = document.querySelector('meta[name="description"]');
     if (!metaDescription) {
@@ -23,7 +23,7 @@ export function SEO({ title, description }: SEOProps) {
       ogTitle.setAttribute("property", "og:title");
       document.head.appendChild(ogTitle);
     }
-    ogTitle.setAttribute("content", `${title} | NexusInvest`);
+    ogTitle.setAttribute("content", `${title} | Sila`);
 
     let ogDescription = document.querySelector('meta[property="og:description"]');
     if (!ogDescription) {
