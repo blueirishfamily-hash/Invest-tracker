@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
 import { SEO } from "@/components/seo";
 import type { SectorAnalysis, BreakdownAnalysis, PortfolioMetrics } from "@shared/schema";
@@ -20,6 +21,7 @@ export default function Analysis() {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>("1M");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [returnType, setReturnType] = useState<"TWR" | "MWR">("TWR");
   
   // Fetch data based on breakdown type
   const { data: sectors, isLoading: sectorsLoading } = useQuery<SectorAnalysis[]>({
@@ -41,13 +43,14 @@ export default function Analysis() {
     category: string;
     data: Array<{ date: string; value: number }>;
   }>>({
-    queryKey: ["/api/analysis/category-performance", selectedBreakdownType, selectedCategories, selectedTimeframe],
+    queryKey: ["/api/analysis/category-performance", selectedBreakdownType, selectedCategories, selectedTimeframe, returnType],
     enabled: selectedCategories.length > 0,
     queryFn: async () => {
       const params = new URLSearchParams({
         type: selectedBreakdownType,
         categories: selectedCategories.join(","),
         timeframe: selectedTimeframe,
+        returnType: returnType,
       });
       const response = await fetch(`/api/analysis/category-performance?${params}`);
       if (!response.ok) throw new Error("Failed to fetch category performance");
@@ -250,17 +253,39 @@ export default function Analysis() {
       {/* Timeframe Selector */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-2">
-            {timeframeOptions.map(option => (
-              <Button
-                key={option.value}
-                variant={selectedTimeframe === option.value ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedTimeframe(option.value)}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-2">
+              {timeframeOptions.map(option => (
+                <Button
+                  key={option.value}
+                  variant={selectedTimeframe === option.value ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedTimeframe(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-sm font-medium">Return Type:</Label>
+              <ToggleGroup
+                type="single"
+                value={returnType}
+                onValueChange={(value) => {
+                  if (value === "TWR" || value === "MWR") {
+                    setReturnType(value);
+                  }
+                }}
+                className="border rounded-md"
               >
-                {option.label}
-              </Button>
-            ))}
+                <ToggleGroupItem value="TWR" aria-label="Time-Weighted Return" size="sm">
+                  TWR
+                </ToggleGroupItem>
+                <ToggleGroupItem value="MWR" aria-label="Money-Weighted Return" size="sm">
+                  MWR
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -356,6 +381,7 @@ export default function Analysis() {
                     timeframe={selectedTimeframe}
                     title=""
                     noCard={true}
+                    returnType={returnType}
                   />
                 </div>
               </CardContent>
@@ -377,7 +403,7 @@ export default function Analysis() {
         setSelectedBreakdownType(value as "sector" | "account" | "currency" | "region" | "assetType");
         setSelectedSector(null); // Reset selection when switching tabs
         setSelectedCategories([]); // Reset category selection to trigger auto-select all
-        setExpandedView(null); // Reset expanded view
+        // Keep expanded view state when switching tabs
       }}>
         <TabsList className="mb-4">
           <TabsTrigger value="sector">Sector</TabsTrigger>

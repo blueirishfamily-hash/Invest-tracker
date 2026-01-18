@@ -612,6 +612,7 @@ export async function registerRoutes(
       const type = req.query.type as "sector" | "account" | "currency" | "region" | "assetType";
       const categoriesParam = req.query.categories as string;
       const timeframe = (req.query.timeframe as string) || "1M";
+      const returnType = (req.query.returnType as "TWR" | "MWR") || "TWR";
       
       if (!type || !categoriesParam) {
         return res.status(400).json({ error: "type and categories parameters are required" });
@@ -625,7 +626,7 @@ export async function registerRoutes(
         ? categoriesParam 
         : categoriesParam.split(",").map(c => c.trim());
 
-      const performance = await storage.getCategoryPerformance(type, categories, timeframe);
+      const performance = await storage.getCategoryPerformance(type, categories, timeframe, returnType);
       res.json(performance);
     } catch (error) {
       console.error("Error fetching category performance:", error);

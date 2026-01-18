@@ -24,6 +24,7 @@ interface BenchmarkChartProps {
   isExpanded?: boolean;
   onExpandClick?: () => void;
   noCard?: boolean; // If true, don't render Card wrapper
+  returnType?: "TWR" | "MWR";
 }
 
 function ChartSkeleton() {
@@ -194,10 +195,10 @@ const COLORS = [
   "hsl(280 50% 50%)",
 ];
 
-export function BenchmarkChart({ data, chartData, categoryData, isLoading, timeframe, title, isExpanded, onExpandClick, noCard = false }: BenchmarkChartProps) {
-  // If categoryData is provided, don't use S&P 500 default title
+export function BenchmarkChart({ data, chartData, categoryData, isLoading, timeframe, title, isExpanded, onExpandClick, noCard = false, returnType = "TWR" }: BenchmarkChartProps) {
+  // If categoryData is provided or noCard is true, don't use S&P 500 default title
   // Use provided title or empty string (when noCard=true, title should be empty to avoid showing header)
-  const chartTitle = categoryData ? (title || "") : (title || "Portfolio vs S&P 500 Benchmark");
+  const chartTitle = (categoryData || noCard) ? (title || "") : (title || "Portfolio vs S&P 500 Benchmark");
 
   if (isLoading) {
     const content = (
@@ -286,17 +287,7 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
                 <YAxis
                   tick={{ fill: "hsl(var(--muted-foreground))" }}
                   axisLine={{ stroke: "hsl(var(--border))" }}
-                  tickFormatter={(value) => `${value >= 0 ? "+" : ""}${(value - 100).toFixed(2)}%`}
-                  domain={[
-                    (dataMin) => {
-                      const absMax = Math.max(Math.abs((dataMin || 100) - 100), 10);
-                      return 100 - absMax * 1.1;
-                    },
-                    (dataMax) => {
-                      const absMax = Math.max(Math.abs((dataMax || 100) - 100), 10);
-                      return 100 + absMax * 1.1;
-                    },
-                  ]}
+                  tickFormatter={(value) => `${value >= 0 ? "+" : ""}${(value - 100).toFixed(0)}%`}
                 />
                 <Tooltip
                   contentStyle={{
@@ -422,7 +413,7 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
     <Card>
       <CardHeader>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <CardTitle>Portfolio vs S&P 500 (Indexed to 0)</CardTitle>
+          <CardTitle>Portfolio vs S&P 500</CardTitle>
           <div className={`text-sm font-medium ${outperforming ? "text-chart-1" : "text-chart-4"}`}>
             {outperforming ? "Outperforming" : "Underperforming"} by {Math.abs(difference).toFixed(2)}%
           </div>
@@ -445,15 +436,17 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
               <YAxis
                 tick={{ fill: "hsl(var(--muted-foreground))" }}
                 axisLine={{ stroke: "hsl(var(--border))" }}
-                tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`}
+                tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(0)}%`}
                 domain={[
                   (dataMin) => {
-                    const absMax = Math.max(Math.abs(dataMin || 0), 10); // Ensure minimum range
-                    return -absMax * 1.1; // Add 10% padding below 0
+                    const allValues = displayChartData.flatMap(d => [d.portfolio, d.spy]);
+                    const min = Math.min(...allValues, 0);
+                    return min < 0 ? min * 1.1 : 0;
                   },
                   (dataMax) => {
-                    const absMax = Math.max(Math.abs(dataMax || 0), 10); // Ensure minimum range
-                    return absMax * 1.1; // Add 10% padding above 0
+                    const allValues = displayChartData.flatMap(d => [d.portfolio, d.spy]);
+                    const max = Math.max(...allValues, 0);
+                    return max > 0 ? max * 1.1 : 'auto';
                   },
                 ]}
               />

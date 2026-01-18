@@ -354,11 +354,11 @@ export class MemStorage implements IStorage {
       });
     }
 
-    // Normalize to start at 100
+    // Index to start at 0 (calculate percentage change from first price)
     const firstPrice = historicalData[0]?.price || 100;
     return historicalData.map((point) => ({
       ...point,
-      price: (point.price / firstPrice) * 100,
+      price: ((point.price - firstPrice) / firstPrice) * 100,
     }));
   }
 
@@ -638,7 +638,8 @@ export class MemStorage implements IStorage {
   async getCategoryPerformance(
     type: "sector" | "account" | "currency" | "region" | "assetType",
     categories: string[],
-    timeframe: string
+    timeframe: string,
+    returnType: "TWR" | "MWR" = "TWR"
   ): Promise<Array<{
     category: string;
     data: Array<{ date: string; value: number }>;
@@ -789,13 +790,38 @@ export class MemStorage implements IStorage {
           value: historicalDataMap.get(date) || 0,
         }));
 
-      // Index to starting value (100)
       if (data.length > 0) {
-        const startValue = data[0].value;
-        const indexedData = data.map(point => ({
-          date: point.date,
-          value: startValue > 0 ? (point.value / startValue) * 100 : 100,
-        }));
+        let indexedData: Array<{ date: string; value: number }>;
+        
+        if (returnType === "TWR") {
+          // TWR: Index to starting value (100) - time-weighted return
+          const startValue = data[0].value;
+          indexedData = data.map(point => ({
+            date: point.date,
+            value: startValue > 0 ? (point.value / startValue) * 100 : 100,
+          }));
+        } else {
+          // MWR: Money-weighted return using cost basis
+          // Calculate total cost basis for this category
+          const totalCostBasis = categoryHoldings.reduce((sum, holding) => sum + holding.costBasis, 0);
+          
+          if (totalCostBasis > 0) {
+            // MWR: Index based on cost basis (initial investment)
+            // Value at any point = (currentValue / costBasis) * 100
+            indexedData = data.map(point => ({
+              date: point.date,
+              value: (point.value / totalCostBasis) * 100,
+            }));
+          } else {
+            // Fallback to TWR if no cost basis
+            const startValue = data[0].value;
+            indexedData = data.map(point => ({
+              date: point.date,
+              value: startValue > 0 ? (point.value / startValue) * 100 : 100,
+            }));
+          }
+        }
+        
         results.push({ category, data: indexedData });
       } else {
         results.push({ category, data: [] });
