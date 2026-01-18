@@ -11,8 +11,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Home, Bitcoin, Gem, Briefcase, Plus, Trash2, Edit, DollarSign, TrendingUp, TrendingDown, Building, Car, Watch, Palette } from "lucide-react";
-import type { RealEstate, CryptoAsset, Collectible, AlternativeInvestment, NetWorthSummary } from "@shared/schema";
+import { Home, Bitcoin, Gem, Briefcase, Plus, Trash2, Edit, DollarSign, TrendingUp, TrendingDown, Building, Car, Watch, Palette, BarChart3 } from "lucide-react";
+import type { RealEstate, CryptoAsset, Collectible, AlternativeInvestment, NetWorthSummary, Holding } from "@shared/schema";
+import { HoldingsTab } from "./holdings";
+import { WholeViewTab } from "@/components/whole-view-treemap";
 
 // Format currency
 const formatCurrency = (value: number) => {
@@ -1406,8 +1408,12 @@ export default function AssetsPage() {
 
         <NetWorthCard />
 
-        <Tabs defaultValue="real-estate" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="holdings" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="holdings" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              <span className="hidden sm:inline">Holdings</span>
+            </TabsTrigger>
             <TabsTrigger value="real-estate" className="flex items-center gap-2">
               <Home className="h-4 w-4" />
               <span className="hidden sm:inline">Real Estate</span>
@@ -1424,7 +1430,15 @@ export default function AssetsPage() {
               <Briefcase className="h-4 w-4" />
               <span className="hidden sm:inline">Alt Investments</span>
             </TabsTrigger>
+            <TabsTrigger value="whole-view" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden sm:inline">Whole View</span>
+            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="holdings">
+            <HoldingsTab />
+          </TabsContent>
 
           <TabsContent value="real-estate">
             <RealEstateTab />
@@ -1440,6 +1454,10 @@ export default function AssetsPage() {
 
           <TabsContent value="alternative">
             <AlternativeInvestmentsTab />
+          </TabsContent>
+
+          <TabsContent value="whole-view">
+            <WholeViewTab />
           </TabsContent>
         </Tabs>
       </div>

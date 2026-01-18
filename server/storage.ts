@@ -36,6 +36,7 @@ import {
   fetchCurrentQuote,
   searchStock,
 } from "./market-data";
+import { updateCryptoAssetPrices } from "./coingecko";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -1819,8 +1820,13 @@ export class MemStorage implements IStorage {
   async createCryptoAsset(asset: InsertCryptoAsset): Promise<CryptoAsset> {
     const id = `crypto-${randomUUID()}`;
     const now = new Date().toISOString();
+    
+    // Ensure currentValue is calculated from quantity * currentPrice
+    const calculatedValue = asset.quantity * asset.currentPrice;
+    
     const newAsset: CryptoAsset = {
       ...asset,
+      currentValue: calculatedValue,
       id,
       createdAt: now,
       updatedAt: now,
@@ -1836,9 +1842,16 @@ export class MemStorage implements IStorage {
     const existing = this.cryptoAssets.get(id);
     if (!existing) return undefined;
 
+    const quantity = updates.quantity ?? existing.quantity;
+    const currentPrice = updates.currentPrice ?? existing.currentPrice;
+    
+    // Recalculate currentValue if quantity or price changed
+    const calculatedValue = quantity * currentPrice;
+
     const updated: CryptoAsset = {
       ...existing,
       ...updates,
+      currentValue: calculatedValue,
       id,
       updatedAt: new Date().toISOString(),
     };
@@ -1958,8 +1971,32 @@ export class MemStorage implements IStorage {
     const realEstateValue = properties.reduce((sum, p) => sum + p.estimatedValue, 0);
     const mortgages = properties.reduce((sum, p) => sum + (p.mortgageBalance || 0), 0);
 
-    // Get crypto assets
-    const cryptoAssetsList = await this.getCryptoAssets();
+    // Get crypto assets and update prices
+    let cryptoAssetsList = await this.getCryptoAssets();
+    
+    // Update crypto prices with current market data
+    try {
+      const updatedCrypto = await updateCryptoAssetPrices(cryptoAssetsList);
+      
+      // Save updated prices back to storage
+      for (const updated of updatedCrypto) {
+        const existing = this.cryptoAssets.get(updated.id);
+        if (existing && (existing.currentPrice !== updated.currentPrice || existing.currentValue !== updated.currentValue)) {
+          this.cryptoAssets.set(updated.id, {
+            ...existing,
+            currentPrice: updated.currentPrice,
+            currentValue: updated.currentValue,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+      
+      cryptoAssetsList = updatedCrypto;
+    } catch (error) {
+      console.error("Error updating crypto prices:", error);
+      // Continue with existing prices if update fails
+    }
+    
     const cryptoValue = cryptoAssetsList.reduce((sum, c) => sum + c.currentValue, 0);
 
     // Get collectibles

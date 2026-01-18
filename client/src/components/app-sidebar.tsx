@@ -20,16 +20,6 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Accounts",
-    url: "/accounts",
-    icon: Link2,
-  },
-  {
-    title: "Holdings",
-    url: "/holdings",
-    icon: TrendingUp,
-  },
-  {
     title: "Assets",
     url: "/assets",
     icon: Wallet,
@@ -88,6 +78,11 @@ const navItems = [
     title: "AI Assistant",
     url: "/ai-assistant",
     icon: MessageCircle,
+  },
+  {
+    title: "Accounts",
+    url: "/accounts",
+    icon: Link2,
   },
 ];
 
