@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,8 @@ import {
 } from "@/components/ui/select";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { SEO } from "@/components/seo";
-import { Gauge, AlertCircle, Info, TrendingUp, TrendingDown } from "lucide-react";
+import { Gauge, AlertCircle, Info, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { RiskMetricsCard } from "@/components/risk-metrics-card";
 import type { FearGreedIndex } from "@shared/schema";
 
 /**
@@ -100,10 +102,69 @@ export default function RiskIndicators() {
           Risk Indicators
         </h1>
         <p className="text-muted-foreground" data-testid="text-page-description">
-          Monitor market sentiment and risk indicators to inform your investment decisions
+          Monitor market sentiment and portfolio risk metrics to inform your investment decisions
         </p>
       </div>
 
+      <Tabs defaultValue="portfolio" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="portfolio" className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Portfolio Risk
+          </TabsTrigger>
+          <TabsTrigger value="fear-greed" className="flex items-center gap-2">
+            <Gauge className="h-4 w-4" />
+            Fear & Greed
+          </TabsTrigger>
+          <TabsTrigger value="vix" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            VIX
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Portfolio Risk Tab */}
+        <TabsContent value="portfolio" className="space-y-6">
+          <RiskMetricsCard />
+          
+          {/* Risk Metrics Information Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                Understanding Portfolio Risk Metrics
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4 text-sm text-muted-foreground">
+                <ul className="list-disc list-inside space-y-2 ml-2">
+                  <li>
+                    <span className="font-medium text-foreground">Volatility:</span> Measures price
+                    fluctuation risk. Higher volatility means larger price swings.
+                  </li>
+                  <li>
+                    <span className="font-medium text-foreground">Beta:</span> Measures sensitivity
+                    to market movements. Beta of 1.0 moves with the market, greater than 1 is more volatile.
+                  </li>
+                  <li>
+                    <span className="font-medium text-foreground">Sharpe Ratio:</span> Risk-adjusted
+                    return measure. Higher is better (above 1 is good, above 2 is very good).
+                  </li>
+                  <li>
+                    <span className="font-medium text-foreground">Value at Risk (VaR):</span> Maximum
+                    expected daily loss at given confidence levels.
+                  </li>
+                  <li>
+                    <span className="font-medium text-foreground">Max Drawdown:</span> Largest historical
+                    decline from peak to trough.
+                  </li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Fear & Greed Tab */}
+        <TabsContent value="fear-greed" className="space-y-6">
       {/* CNN Fear & Greed Index Card */}
       <Card>
         <CardHeader>
@@ -247,6 +308,52 @@ export default function RiskIndicators() {
         </CardContent>
       </Card>
 
+      {/* Information Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Info className="h-5 w-5" />
+            About the Fear & Greed Index
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>
+              The CNN Fear & Greed Index is a market sentiment indicator that measures investor
+              emotions and psychology. It ranges from 0 to 100, where:
+            </p>
+            <ul className="list-disc list-inside space-y-2 ml-2">
+              <li>
+                <span className="font-medium text-foreground">0-25 (Extreme Fear):</span> Investors
+                are very fearful, which may indicate a buying opportunity.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">26-45 (Fear):</span> Investors are
+                cautious and fearful about the market.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">46-55 (Neutral):</span> Market
+                sentiment is balanced between fear and greed.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">56-75 (Greed):</span> Investors are
+                showing greed and may be overvaluing assets.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">76-100 (Extreme Greed):</span> Extreme
+                greed may indicate the market is overbought and due for a correction.
+              </li>
+            </ul>
+            <p className="text-xs italic pt-2">
+              Data source: CNN Business Fear & Greed Index
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+        </TabsContent>
+
+        {/* VIX Tab */}
+        <TabsContent value="vix" className="space-y-6">
       {/* VIX Indicator Card */}
       <Card>
         <CardHeader>
@@ -460,54 +567,6 @@ export default function RiskIndicators() {
         </CardContent>
       </Card>
 
-      {/* Information Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Info className="h-5 w-5" />
-            About the Fear & Greed Index
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              The CNN Fear & Greed Index is a market sentiment indicator that measures investor
-              emotions and psychology. It ranges from 0 to 100, where:
-            </p>
-            <ul className="list-disc list-inside space-y-2 ml-2">
-              <li>
-                <span className="font-medium text-foreground">0-25 (Extreme Fear):</span> Investors
-                are very fearful, which may indicate a buying opportunity.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">26-45 (Fear):</span> Investors are
-                cautious and fearful about the market.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">46-55 (Neutral):</span> Market
-                sentiment is balanced between fear and greed.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">56-75 (Greed):</span> Investors are
-                showing greed and may be overvaluing assets.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">76-100 (Extreme Greed):</span> Extreme
-                greed may indicate the market is overbought and due for a correction.
-              </li>
-            </ul>
-            <p>
-              The index is calculated using 7 equally weighted indicators: Stock Price Momentum,
-              Stock Price Strength, Stock Price Breadth, Put and Call Options, Junk Bond Demand,
-              Market Volatility, and Safe Haven Demand.
-            </p>
-            <p className="text-xs italic pt-2">
-              Data source: CNN Business Fear & Greed Index
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* VIX Information Card */}
       <Card>
         <CardHeader>
@@ -554,6 +613,8 @@ export default function RiskIndicators() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

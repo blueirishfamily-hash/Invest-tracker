@@ -17,6 +17,12 @@ import Research from "@/pages/research";
 import Accounts from "@/pages/accounts";
 import Dividends from "@/pages/dividends";
 import RiskIndicators from "@/pages/risk-indicators";
+import Assets from "@/pages/assets";
+import Planning from "@/pages/planning";
+import Entities from "@/pages/entities";
+import Estate from "@/pages/estate";
+import Family from "@/pages/family";
+import AIAssistant from "@/pages/ai-assistant";
 
 function Router() {
   return (
@@ -30,6 +36,12 @@ function Router() {
       <Route path="/accounts" component={Accounts} />
       <Route path="/dividends" component={Dividends} />
       <Route path="/risk-indicators" component={RiskIndicators} />
+      <Route path="/assets" component={Assets} />
+      <Route path="/planning" component={Planning} />
+      <Route path="/entities" component={Entities} />
+      <Route path="/estate" component={Estate} />
+      <Route path="/family" component={Family} />
+      <Route path="/ai-assistant" component={AIAssistant} />
       <Route component={NotFound} />
     </Switch>
   );

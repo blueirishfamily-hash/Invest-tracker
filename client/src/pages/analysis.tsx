@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IndustryChart, IndustryTable } from "@/components/industry-chart";
 import { BenchmarkChart } from "@/components/benchmark-chart";
+import { FeeAnalyzer } from "@/components/fee-analyzer";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign } from "lucide-react";
 import { SEO } from "@/components/seo";
 import type { SectorAnalysis, BreakdownAnalysis, PortfolioMetrics } from "@shared/schema";
 
@@ -141,10 +142,23 @@ export default function Analysis() {
           Portfolio Analysis
         </h1>
         <p className="text-muted-foreground" data-testid="text-page-description">
-          Deep dive into your portfolio performance and sector allocation
+          Deep dive into your portfolio performance, allocation, and fees
         </p>
       </div>
 
+      <Tabs defaultValue="breakdown" className="space-y-6">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="breakdown" className="flex items-center gap-2">
+            <PieChart className="h-4 w-4" />
+            Breakdown
+          </TabsTrigger>
+          <TabsTrigger value="fees" className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4" />
+            Fees
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="breakdown" className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card data-testid="card-top-performer">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
@@ -461,6 +475,12 @@ export default function Analysis() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="fees">
+          <FeeAnalyzer />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

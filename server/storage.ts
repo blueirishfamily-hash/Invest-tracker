@@ -15,7 +15,20 @@ import {
   type IndexData,
   type PlaidAccount,
   type InsertPlaidAccount,
+  type RealEstate,
+  type InsertRealEstate,
+  type CryptoAsset,
+  type InsertCryptoAsset,
+  type Collectible,
+  type InsertCollectible,
+  type AlternativeInvestment,
+  type InsertAlternativeInvestment,
+  type NetWorthSummary,
   demoHoldings,
+  demoRealEstate,
+  demoCryptoAssets,
+  demoCollectibles,
+  demoAlternativeInvestments,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import {
@@ -50,20 +63,72 @@ export interface IStorage {
   getPlaidAccount(id: string): Promise<PlaidAccount | undefined>;
   updatePlaidAccount(id: string, updates: Partial<InsertPlaidAccount>): Promise<PlaidAccount | undefined>;
   deletePlaidAccount(id: string): Promise<boolean>;
+
+  // Real Estate methods
+  getRealEstateProperties(): Promise<RealEstate[]>;
+  getRealEstateProperty(id: string): Promise<RealEstate | undefined>;
+  createRealEstateProperty(property: InsertRealEstate): Promise<RealEstate>;
+  updateRealEstateProperty(id: string, updates: Partial<InsertRealEstate>): Promise<RealEstate | undefined>;
+  deleteRealEstateProperty(id: string): Promise<boolean>;
+
+  // Crypto Asset methods
+  getCryptoAssets(): Promise<CryptoAsset[]>;
+  getCryptoAsset(id: string): Promise<CryptoAsset | undefined>;
+  createCryptoAsset(asset: InsertCryptoAsset): Promise<CryptoAsset>;
+  updateCryptoAsset(id: string, updates: Partial<InsertCryptoAsset>): Promise<CryptoAsset | undefined>;
+  deleteCryptoAsset(id: string): Promise<boolean>;
+
+  // Collectible methods
+  getCollectibles(): Promise<Collectible[]>;
+  getCollectible(id: string): Promise<Collectible | undefined>;
+  createCollectible(collectible: InsertCollectible): Promise<Collectible>;
+  updateCollectible(id: string, updates: Partial<InsertCollectible>): Promise<Collectible | undefined>;
+  deleteCollectible(id: string): Promise<boolean>;
+
+  // Alternative Investment methods
+  getAlternativeInvestments(): Promise<AlternativeInvestment[]>;
+  getAlternativeInvestment(id: string): Promise<AlternativeInvestment | undefined>;
+  createAlternativeInvestment(investment: InsertAlternativeInvestment): Promise<AlternativeInvestment>;
+  updateAlternativeInvestment(id: string, updates: Partial<InsertAlternativeInvestment>): Promise<AlternativeInvestment | undefined>;
+  deleteAlternativeInvestment(id: string): Promise<boolean>;
+
+  // Net Worth
+  getNetWorthSummary(): Promise<NetWorthSummary>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private holdings: Map<string, Holding>;
   private plaidAccounts: Map<string, PlaidAccount>;
+  private realEstateProperties: Map<string, RealEstate>;
+  private cryptoAssets: Map<string, CryptoAsset>;
+  private collectibles: Map<string, Collectible>;
+  private alternativeInvestments: Map<string, AlternativeInvestment>;
 
   constructor() {
     this.users = new Map();
     this.holdings = new Map();
     this.plaidAccounts = new Map();
+    this.realEstateProperties = new Map();
+    this.cryptoAssets = new Map();
+    this.collectibles = new Map();
+    this.alternativeInvestments = new Map();
     
+    // Initialize with demo data
     for (const holding of demoHoldings) {
       this.holdings.set(holding.id, holding);
+    }
+    for (const property of demoRealEstate) {
+      this.realEstateProperties.set(property.id, property);
+    }
+    for (const crypto of demoCryptoAssets) {
+      this.cryptoAssets.set(crypto.id, crypto);
+    }
+    for (const collectible of demoCollectibles) {
+      this.collectibles.set(collectible.id, collectible);
+    }
+    for (const investment of demoAlternativeInvestments) {
+      this.alternativeInvestments.set(investment.id, investment);
     }
   }
 
@@ -1691,6 +1756,234 @@ export class MemStorage implements IStorage {
 
   async deletePlaidAccount(id: string): Promise<boolean> {
     return this.plaidAccounts.delete(id);
+  }
+
+  // ============================================
+  // REAL ESTATE METHODS
+  // ============================================
+
+  async getRealEstateProperties(): Promise<RealEstate[]> {
+    return Array.from(this.realEstateProperties.values());
+  }
+
+  async getRealEstateProperty(id: string): Promise<RealEstate | undefined> {
+    return this.realEstateProperties.get(id);
+  }
+
+  async createRealEstateProperty(property: InsertRealEstate): Promise<RealEstate> {
+    const id = `re-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newProperty: RealEstate = {
+      ...property,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.realEstateProperties.set(id, newProperty);
+    return newProperty;
+  }
+
+  async updateRealEstateProperty(
+    id: string,
+    updates: Partial<InsertRealEstate>
+  ): Promise<RealEstate | undefined> {
+    const existing = this.realEstateProperties.get(id);
+    if (!existing) return undefined;
+
+    const updated: RealEstate = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.realEstateProperties.set(id, updated);
+    return updated;
+  }
+
+  async deleteRealEstateProperty(id: string): Promise<boolean> {
+    return this.realEstateProperties.delete(id);
+  }
+
+  // ============================================
+  // CRYPTO ASSET METHODS
+  // ============================================
+
+  async getCryptoAssets(): Promise<CryptoAsset[]> {
+    return Array.from(this.cryptoAssets.values());
+  }
+
+  async getCryptoAsset(id: string): Promise<CryptoAsset | undefined> {
+    return this.cryptoAssets.get(id);
+  }
+
+  async createCryptoAsset(asset: InsertCryptoAsset): Promise<CryptoAsset> {
+    const id = `crypto-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newAsset: CryptoAsset = {
+      ...asset,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.cryptoAssets.set(id, newAsset);
+    return newAsset;
+  }
+
+  async updateCryptoAsset(
+    id: string,
+    updates: Partial<InsertCryptoAsset>
+  ): Promise<CryptoAsset | undefined> {
+    const existing = this.cryptoAssets.get(id);
+    if (!existing) return undefined;
+
+    const updated: CryptoAsset = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.cryptoAssets.set(id, updated);
+    return updated;
+  }
+
+  async deleteCryptoAsset(id: string): Promise<boolean> {
+    return this.cryptoAssets.delete(id);
+  }
+
+  // ============================================
+  // COLLECTIBLE METHODS
+  // ============================================
+
+  async getCollectibles(): Promise<Collectible[]> {
+    return Array.from(this.collectibles.values());
+  }
+
+  async getCollectible(id: string): Promise<Collectible | undefined> {
+    return this.collectibles.get(id);
+  }
+
+  async createCollectible(collectible: InsertCollectible): Promise<Collectible> {
+    const id = `coll-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newCollectible: Collectible = {
+      ...collectible,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.collectibles.set(id, newCollectible);
+    return newCollectible;
+  }
+
+  async updateCollectible(
+    id: string,
+    updates: Partial<InsertCollectible>
+  ): Promise<Collectible | undefined> {
+    const existing = this.collectibles.get(id);
+    if (!existing) return undefined;
+
+    const updated: Collectible = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.collectibles.set(id, updated);
+    return updated;
+  }
+
+  async deleteCollectible(id: string): Promise<boolean> {
+    return this.collectibles.delete(id);
+  }
+
+  // ============================================
+  // ALTERNATIVE INVESTMENT METHODS
+  // ============================================
+
+  async getAlternativeInvestments(): Promise<AlternativeInvestment[]> {
+    return Array.from(this.alternativeInvestments.values());
+  }
+
+  async getAlternativeInvestment(id: string): Promise<AlternativeInvestment | undefined> {
+    return this.alternativeInvestments.get(id);
+  }
+
+  async createAlternativeInvestment(
+    investment: InsertAlternativeInvestment
+  ): Promise<AlternativeInvestment> {
+    const id = `alt-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newInvestment: AlternativeInvestment = {
+      ...investment,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.alternativeInvestments.set(id, newInvestment);
+    return newInvestment;
+  }
+
+  async updateAlternativeInvestment(
+    id: string,
+    updates: Partial<InsertAlternativeInvestment>
+  ): Promise<AlternativeInvestment | undefined> {
+    const existing = this.alternativeInvestments.get(id);
+    if (!existing) return undefined;
+
+    const updated: AlternativeInvestment = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.alternativeInvestments.set(id, updated);
+    return updated;
+  }
+
+  async deleteAlternativeInvestment(id: string): Promise<boolean> {
+    return this.alternativeInvestments.delete(id);
+  }
+
+  // ============================================
+  // NET WORTH SUMMARY
+  // ============================================
+
+  async getNetWorthSummary(): Promise<NetWorthSummary> {
+    // Get all holdings (stocks & ETFs)
+    const holdings = await this.getHoldings();
+    const stocksAndETFs = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+
+    // Get real estate
+    const properties = await this.getRealEstateProperties();
+    const realEstateValue = properties.reduce((sum, p) => sum + p.estimatedValue, 0);
+    const mortgages = properties.reduce((sum, p) => sum + (p.mortgageBalance || 0), 0);
+
+    // Get crypto assets
+    const cryptoAssetsList = await this.getCryptoAssets();
+    const cryptoValue = cryptoAssetsList.reduce((sum, c) => sum + c.currentValue, 0);
+
+    // Get collectibles
+    const collectiblesList = await this.getCollectibles();
+    const collectiblesValue = collectiblesList.reduce((sum, c) => sum + c.estimatedValue, 0);
+
+    // Get alternative investments
+    const altInvestments = await this.getAlternativeInvestments();
+    const altInvestmentsValue = altInvestments.reduce((sum, a) => sum + a.currentNAV, 0);
+
+    const totalNetWorth = stocksAndETFs + realEstateValue + cryptoValue + collectiblesValue + altInvestmentsValue;
+    const totalLiabilities = mortgages;
+    const netEquity = totalNetWorth - totalLiabilities;
+
+    return {
+      stocksAndETFs,
+      realEstate: realEstateValue,
+      crypto: cryptoValue,
+      collectibles: collectiblesValue,
+      alternativeInvestments: altInvestmentsValue,
+      totalNetWorth,
+      totalLiabilities,
+      netEquity,
+    };
   }
 }
 

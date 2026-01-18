@@ -10,7 +10,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings, Newspaper, Search, Link2, DollarSign, Gauge } from "lucide-react";
+import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings, Newspaper, Search, Link2, DollarSign, Gauge, Wallet, Target, Building2, Users, FileHeart, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const navItems = [
@@ -28,6 +28,11 @@ const navItems = [
     title: "Holdings",
     url: "/holdings",
     icon: TrendingUp,
+  },
+  {
+    title: "Assets",
+    url: "/assets",
+    icon: Wallet,
   },
   {
     title: "Analysis",
@@ -58,6 +63,31 @@ const navItems = [
     title: "Risk Indicators",
     url: "/risk-indicators",
     icon: Gauge,
+  },
+  {
+    title: "Planning",
+    url: "/planning",
+    icon: Target,
+  },
+  {
+    title: "Entities",
+    url: "/entities",
+    icon: Building2,
+  },
+  {
+    title: "Estate",
+    url: "/estate",
+    icon: FileHeart,
+  },
+  {
+    title: "Family",
+    url: "/family",
+    icon: Users,
+  },
+  {
+    title: "AI Assistant",
+    url: "/ai-assistant",
+    icon: MessageCircle,
   },
 ];
 

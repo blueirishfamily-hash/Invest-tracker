@@ -16,6 +16,25 @@ import {
   getItem,
   getInstitution,
 } from "./plaid";
+import { calculatePortfolioRiskMetrics } from "./risk-calculations";
+import { analyzePortfolioFees } from "./fee-analyzer";
+import { runMonteCarloSimulation } from "./monte-carlo";
+import { analyzeTaxLossHarvesting, calculateRothConversion } from "./tax-planning";
+import { projectCashFlow, getCashFlowDefaults } from "./cash-flow";
+import { getExchangeRates, convertCurrency, currencyDetails } from "./currency";
+import * as entities from "./entities";
+import * as estate from "./estate";
+import * as household from "./household";
+import { processQuery, getConversation, getUserConversations, deleteConversation } from "./ai-assistant";
+import { 
+  monteCarloInputSchema, 
+  rothConversionInputSchema, 
+  cashFlowInputSchema,
+  insertLegalEntitySchema,
+  insertBeneficiarySchema,
+  insertVaultDocumentSchema,
+  aiQuerySchema,
+} from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1040,6 +1059,965 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message || "Failed to delete account" });
+    }
+  });
+
+  // ============================================
+  // REAL ESTATE ENDPOINTS
+  // ============================================
+
+  app.get("/api/real-estate", async (_req, res) => {
+    try {
+      const properties = await storage.getRealEstateProperties();
+      res.json(properties);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch real estate properties" });
+    }
+  });
+
+  app.get("/api/real-estate/:id", async (req, res) => {
+    try {
+      const property = await storage.getRealEstateProperty(req.params.id);
+      if (!property) {
+        return res.status(404).json({ error: "Property not found" });
+      }
+      res.json(property);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch property" });
+    }
+  });
+
+  app.post("/api/real-estate", async (req, res) => {
+    try {
+      const property = await storage.createRealEstateProperty(req.body);
+      res.status(201).json(property);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create property" });
+    }
+  });
+
+  app.patch("/api/real-estate/:id", async (req, res) => {
+    try {
+      const property = await storage.updateRealEstateProperty(req.params.id, req.body);
+      if (!property) {
+        return res.status(404).json({ error: "Property not found" });
+      }
+      res.json(property);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update property" });
+    }
+  });
+
+  app.delete("/api/real-estate/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteRealEstateProperty(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Property not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete property" });
+    }
+  });
+
+  // ============================================
+  // CRYPTO ASSET ENDPOINTS
+  // ============================================
+
+  app.get("/api/crypto", async (_req, res) => {
+    try {
+      const { updateCryptoAssetPrices } = await import("./coingecko");
+      let assets = await storage.getCryptoAssets();
+      
+      // Update prices from CoinGecko
+      assets = await updateCryptoAssetPrices(assets);
+      
+      // Update stored values with new prices
+      for (const asset of assets) {
+        await storage.updateCryptoAsset(asset.id, {
+          currentPrice: asset.currentPrice,
+          currentValue: asset.currentValue,
+        });
+      }
+      
+      res.json(assets);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch crypto assets" });
+    }
+  });
+
+  app.get("/api/crypto/:id", async (req, res) => {
+    try {
+      const asset = await storage.getCryptoAsset(req.params.id);
+      if (!asset) {
+        return res.status(404).json({ error: "Crypto asset not found" });
+      }
+      res.json(asset);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch crypto asset" });
+    }
+  });
+
+  app.post("/api/crypto", async (req, res) => {
+    try {
+      const { getPriceBySymbol } = await import("./coingecko");
+      
+      // Try to fetch current price from CoinGecko
+      const priceData = await getPriceBySymbol(req.body.symbol);
+      let assetData = { ...req.body };
+      
+      if (priceData) {
+        assetData.currentPrice = priceData.price;
+        assetData.currentValue = req.body.quantity * priceData.price;
+      }
+      
+      const asset = await storage.createCryptoAsset(assetData);
+      res.status(201).json(asset);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create crypto asset" });
+    }
+  });
+
+  app.patch("/api/crypto/:id", async (req, res) => {
+    try {
+      const asset = await storage.updateCryptoAsset(req.params.id, req.body);
+      if (!asset) {
+        return res.status(404).json({ error: "Crypto asset not found" });
+      }
+      res.json(asset);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update crypto asset" });
+    }
+  });
+
+  app.delete("/api/crypto/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCryptoAsset(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Crypto asset not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete crypto asset" });
+    }
+  });
+
+  // Crypto search endpoint
+  app.get("/api/crypto/search", async (req, res) => {
+    try {
+      const query = req.query.query as string;
+      if (!query || query.length < 2) {
+        return res.json([]);
+      }
+      
+      const { searchCoins } = await import("./coingecko");
+      const results = await searchCoins(query);
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to search cryptocurrencies" });
+    }
+  });
+
+  // Crypto market data endpoint
+  app.get("/api/crypto/market", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const { getMarketData } = await import("./coingecko");
+      const data = await getMarketData(limit);
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch crypto market data" });
+    }
+  });
+
+  // ============================================
+  // COLLECTIBLE ENDPOINTS
+  // ============================================
+
+  app.get("/api/collectibles", async (_req, res) => {
+    try {
+      const collectibles = await storage.getCollectibles();
+      res.json(collectibles);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch collectibles" });
+    }
+  });
+
+  app.get("/api/collectibles/:id", async (req, res) => {
+    try {
+      const collectible = await storage.getCollectible(req.params.id);
+      if (!collectible) {
+        return res.status(404).json({ error: "Collectible not found" });
+      }
+      res.json(collectible);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch collectible" });
+    }
+  });
+
+  app.post("/api/collectibles", async (req, res) => {
+    try {
+      const collectible = await storage.createCollectible(req.body);
+      res.status(201).json(collectible);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create collectible" });
+    }
+  });
+
+  app.patch("/api/collectibles/:id", async (req, res) => {
+    try {
+      const collectible = await storage.updateCollectible(req.params.id, req.body);
+      if (!collectible) {
+        return res.status(404).json({ error: "Collectible not found" });
+      }
+      res.json(collectible);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update collectible" });
+    }
+  });
+
+  app.delete("/api/collectibles/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCollectible(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Collectible not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete collectible" });
+    }
+  });
+
+  // ============================================
+  // ALTERNATIVE INVESTMENT ENDPOINTS
+  // ============================================
+
+  app.get("/api/alternative-investments", async (_req, res) => {
+    try {
+      const investments = await storage.getAlternativeInvestments();
+      res.json(investments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch alternative investments" });
+    }
+  });
+
+  app.get("/api/alternative-investments/:id", async (req, res) => {
+    try {
+      const investment = await storage.getAlternativeInvestment(req.params.id);
+      if (!investment) {
+        return res.status(404).json({ error: "Investment not found" });
+      }
+      res.json(investment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch investment" });
+    }
+  });
+
+  app.post("/api/alternative-investments", async (req, res) => {
+    try {
+      const investment = await storage.createAlternativeInvestment(req.body);
+      res.status(201).json(investment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to create investment" });
+    }
+  });
+
+  app.patch("/api/alternative-investments/:id", async (req, res) => {
+    try {
+      const investment = await storage.updateAlternativeInvestment(req.params.id, req.body);
+      if (!investment) {
+        return res.status(404).json({ error: "Investment not found" });
+      }
+      res.json(investment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to update investment" });
+    }
+  });
+
+  app.delete("/api/alternative-investments/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteAlternativeInvestment(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Investment not found" });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to delete investment" });
+    }
+  });
+
+  // ============================================
+  // NET WORTH SUMMARY ENDPOINT
+  // ============================================
+
+  app.get("/api/net-worth", async (_req, res) => {
+    try {
+      const summary = await storage.getNetWorthSummary();
+      res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to fetch net worth summary" });
+    }
+  });
+
+  // ============================================
+  // PORTFOLIO RISK METRICS ENDPOINTS
+  // ============================================
+
+  app.get("/api/portfolio/risk-metrics", async (req, res) => {
+    try {
+      const timeframe = (req.query.timeframe as "1Y" | "3Y" | "5Y") || "1Y";
+      
+      // Validate timeframe
+      if (!["1Y", "3Y", "5Y"].includes(timeframe)) {
+        return res.status(400).json({ error: "Invalid timeframe. Must be 1Y, 3Y, or 5Y" });
+      }
+      
+      // Get holdings
+      const holdings = await storage.getHoldings();
+      
+      if (holdings.length === 0) {
+        return res.status(404).json({ error: "No holdings found to analyze" });
+      }
+      
+      // Calculate risk metrics
+      const metrics = await calculatePortfolioRiskMetrics(holdings, timeframe);
+      res.json(metrics);
+    } catch (error: any) {
+      console.error("Error calculating risk metrics:", error);
+      res.status(500).json({ error: error.message || "Failed to calculate risk metrics" });
+    }
+  });
+
+  // ============================================
+  // FEE ANALYZER ENDPOINTS
+  // ============================================
+
+  app.get("/api/portfolio/fee-analysis", async (_req, res) => {
+    try {
+      // Get holdings
+      const holdings = await storage.getHoldings();
+      
+      if (holdings.length === 0) {
+        return res.status(404).json({ error: "No holdings found to analyze" });
+      }
+      
+      // Analyze fees
+      const analysis = await analyzePortfolioFees(holdings);
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("Error analyzing portfolio fees:", error);
+      res.status(500).json({ error: error.message || "Failed to analyze portfolio fees" });
+    }
+  });
+
+  // ============================================
+  // PLANNING / MONTE CARLO ENDPOINTS
+  // ============================================
+
+  // Get default planning values from current portfolio
+  app.get("/api/planning/defaults", async (_req, res) => {
+    try {
+      // Get net worth summary
+      const netWorth = await storage.getNetWorthSummary();
+      
+      // Try to get volatility from risk metrics if available
+      let estimatedVolatility: number | null = null;
+      try {
+        const holdings = await storage.getHoldings();
+        if (holdings.length > 0) {
+          const riskMetrics = await calculatePortfolioRiskMetrics(holdings, "1Y");
+          estimatedVolatility = riskMetrics.volatility / 100; // Convert from % to decimal
+        }
+      } catch (error) {
+        console.log("Could not calculate volatility, using default");
+      }
+      
+      // Suggest target based on 25x rule (assuming 4% withdrawal rate)
+      // Use 4% of current value as estimated annual expenses
+      const estimatedAnnualExpenses = netWorth.totalNetWorth * 0.04;
+      const suggestedTargetAmount = estimatedAnnualExpenses * 25;
+      
+      res.json({
+        currentPortfolioValue: netWorth.totalNetWorth,
+        estimatedVolatility,
+        suggestedTargetAmount: Math.round(suggestedTargetAmount),
+      });
+    } catch (error: any) {
+      console.error("Error getting planning defaults:", error);
+      res.status(500).json({ error: error.message || "Failed to get planning defaults" });
+    }
+  });
+
+  // Run Monte Carlo simulation
+  app.post("/api/planning/monte-carlo", async (req, res) => {
+    try {
+      // Validate input
+      const parseResult = monteCarloInputSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid simulation parameters",
+          details: parseResult.error.errors
+        });
+      }
+      
+      const input = parseResult.data;
+      
+      // Run simulation
+      const result = runMonteCarloSimulation(input);
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error running Monte Carlo simulation:", error);
+      res.status(500).json({ error: error.message || "Failed to run simulation" });
+    }
+  });
+
+  // ============================================
+  // TAX PLANNING ENDPOINTS
+  // ============================================
+
+  // Get tax-loss harvesting opportunities
+  app.get("/api/tax/loss-harvesting", async (req, res) => {
+    try {
+      const holdings = await storage.getHoldings();
+      
+      if (holdings.length === 0) {
+        return res.status(404).json({ error: "No holdings found to analyze" });
+      }
+      
+      // Optional tax rate parameters
+      const shortTermRate = req.query.shortTermRate 
+        ? parseFloat(req.query.shortTermRate as string) / 100 
+        : undefined;
+      const longTermRate = req.query.longTermRate 
+        ? parseFloat(req.query.longTermRate as string) / 100 
+        : undefined;
+      
+      const analysis = analyzeTaxLossHarvesting(holdings, shortTermRate, longTermRate);
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("Error analyzing tax-loss harvesting:", error);
+      res.status(500).json({ error: error.message || "Failed to analyze tax opportunities" });
+    }
+  });
+
+  // Calculate Roth conversion analysis
+  app.post("/api/tax/roth-conversion", async (req, res) => {
+    try {
+      const parseResult = rothConversionInputSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid Roth conversion parameters",
+          details: parseResult.error.errors,
+        });
+      }
+      
+      const result = calculateRothConversion(parseResult.data);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error calculating Roth conversion:", error);
+      res.status(500).json({ error: error.message || "Failed to calculate Roth conversion" });
+    }
+  });
+
+  // ============================================
+  // CASH FLOW FORECASTING ENDPOINTS
+  // ============================================
+
+  // Get cash flow defaults
+  app.get("/api/cashflow/defaults", async (_req, res) => {
+    try {
+      const netWorth = await storage.getNetWorthSummary();
+      const defaults = getCashFlowDefaults(netWorth.totalNetWorth);
+      res.json(defaults);
+    } catch (error: any) {
+      console.error("Error getting cash flow defaults:", error);
+      res.status(500).json({ error: error.message || "Failed to get defaults" });
+    }
+  });
+
+  // Project cash flow
+  app.post("/api/cashflow/project", async (req, res) => {
+    try {
+      const parseResult = cashFlowInputSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid cash flow parameters",
+          details: parseResult.error.errors,
+        });
+      }
+      
+      const projection = projectCashFlow(parseResult.data);
+      res.json(projection);
+    } catch (error: any) {
+      console.error("Error projecting cash flow:", error);
+      res.status(500).json({ error: error.message || "Failed to project cash flow" });
+    }
+  });
+
+  // ============================================
+  // MULTI-CURRENCY ENDPOINTS
+  // ============================================
+
+  // Get exchange rates
+  app.get("/api/currency/rates", async (_req, res) => {
+    try {
+      const rates = await getExchangeRates();
+      res.json(rates);
+    } catch (error: any) {
+      console.error("Error fetching exchange rates:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch exchange rates" });
+    }
+  });
+
+  // Get supported currencies
+  app.get("/api/currency/supported", (_req, res) => {
+    res.json(currencyDetails);
+  });
+
+  // Convert currency
+  app.get("/api/currency/convert", async (req, res) => {
+    try {
+      const { amount, from, to } = req.query;
+      
+      if (!amount || !from || !to) {
+        return res.status(400).json({ error: "Missing required parameters: amount, from, to" });
+      }
+      
+      const converted = await convertCurrency(
+        parseFloat(amount as string),
+        from as string,
+        to as string
+      );
+      
+      res.json({
+        original: parseFloat(amount as string),
+        from,
+        to,
+        converted,
+      });
+    } catch (error: any) {
+      console.error("Error converting currency:", error);
+      res.status(500).json({ error: error.message || "Failed to convert currency" });
+    }
+  });
+
+  // ============================================
+  // LEGAL ENTITIES ENDPOINTS
+  // ============================================
+
+  // Get all entities
+  app.get("/api/entities", (_req, res) => {
+    try {
+      const allEntities = entities.getEntities();
+      res.json(allEntities);
+    } catch (error: any) {
+      console.error("Error fetching entities:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch entities" });
+    }
+  });
+
+  // Create entity
+  app.post("/api/entities", (req, res) => {
+    try {
+      const parseResult = insertLegalEntitySchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid entity data",
+          details: parseResult.error.errors,
+        });
+      }
+      
+      const entity = entities.createEntity(parseResult.data);
+      res.status(201).json(entity);
+    } catch (error: any) {
+      console.error("Error creating entity:", error);
+      res.status(500).json({ error: error.message || "Failed to create entity" });
+    }
+  });
+
+  // Update entity
+  app.put("/api/entities/:id", (req, res) => {
+    try {
+      const updated = entities.updateEntity(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Entity not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating entity:", error);
+      res.status(500).json({ error: error.message || "Failed to update entity" });
+    }
+  });
+
+  // Delete entity
+  app.delete("/api/entities/:id", (req, res) => {
+    try {
+      const deleted = entities.deleteEntity(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Entity not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting entity:", error);
+      res.status(500).json({ error: error.message || "Failed to delete entity" });
+    }
+  });
+
+  // Assign holding to entity
+  app.post("/api/entities/:id/holdings/:holdingId", (req, res) => {
+    try {
+      const success = entities.assignHoldingToEntity(req.params.id, req.params.holdingId);
+      if (!success) {
+        return res.status(404).json({ error: "Entity not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error assigning holding:", error);
+      res.status(500).json({ error: error.message || "Failed to assign holding" });
+    }
+  });
+
+  // Remove holding from entity
+  app.delete("/api/entities/:id/holdings/:holdingId", (req, res) => {
+    try {
+      const success = entities.removeHoldingFromEntity(req.params.id, req.params.holdingId);
+      res.json({ success });
+    } catch (error: any) {
+      console.error("Error removing holding:", error);
+      res.status(500).json({ error: error.message || "Failed to remove holding" });
+    }
+  });
+
+  // Get entity holdings
+  app.get("/api/entities/:id/holdings", (req, res) => {
+    try {
+      const holdingIds = entities.getEntityHoldingIds(req.params.id);
+      res.json(holdingIds);
+    } catch (error: any) {
+      console.error("Error fetching entity holdings:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch entity holdings" });
+    }
+  });
+
+  // ============================================
+  // ESTATE & BENEFICIARY VAULT ENDPOINTS
+  // ============================================
+
+  // Get estate summary
+  app.get("/api/estate/summary", (_req, res) => {
+    try {
+      const summary = estate.getEstateSummary();
+      res.json(summary);
+    } catch (error: any) {
+      console.error("Error fetching estate summary:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch estate summary" });
+    }
+  });
+
+  // Beneficiaries
+  app.get("/api/estate/beneficiaries", (_req, res) => {
+    try {
+      const beneficiaries = estate.getBeneficiaries();
+      res.json(beneficiaries);
+    } catch (error: any) {
+      console.error("Error fetching beneficiaries:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch beneficiaries" });
+    }
+  });
+
+  app.post("/api/estate/beneficiaries", (req, res) => {
+    try {
+      const parseResult = insertBeneficiarySchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid beneficiary data",
+          details: parseResult.error.errors,
+        });
+      }
+      
+      const beneficiary = estate.createBeneficiary(parseResult.data);
+      res.status(201).json(beneficiary);
+    } catch (error: any) {
+      console.error("Error creating beneficiary:", error);
+      res.status(500).json({ error: error.message || "Failed to create beneficiary" });
+    }
+  });
+
+  app.put("/api/estate/beneficiaries/:id", (req, res) => {
+    try {
+      const updated = estate.updateBeneficiary(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Beneficiary not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating beneficiary:", error);
+      res.status(500).json({ error: error.message || "Failed to update beneficiary" });
+    }
+  });
+
+  app.delete("/api/estate/beneficiaries/:id", (req, res) => {
+    try {
+      const deleted = estate.deleteBeneficiary(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Beneficiary not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting beneficiary:", error);
+      res.status(500).json({ error: error.message || "Failed to delete beneficiary" });
+    }
+  });
+
+  // Documents
+  app.get("/api/estate/documents", (_req, res) => {
+    try {
+      const documents = estate.getDocuments();
+      res.json(documents);
+    } catch (error: any) {
+      console.error("Error fetching documents:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch documents" });
+    }
+  });
+
+  app.post("/api/estate/documents", (req, res) => {
+    try {
+      const parseResult = insertVaultDocumentSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid document data",
+          details: parseResult.error.errors,
+        });
+      }
+      
+      const doc = estate.createDocument(parseResult.data);
+      res.status(201).json(doc);
+    } catch (error: any) {
+      console.error("Error creating document:", error);
+      res.status(500).json({ error: error.message || "Failed to create document" });
+    }
+  });
+
+  app.put("/api/estate/documents/:id", (req, res) => {
+    try {
+      const updated = estate.updateDocument(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating document:", error);
+      res.status(500).json({ error: error.message || "Failed to update document" });
+    }
+  });
+
+  app.delete("/api/estate/documents/:id", (req, res) => {
+    try {
+      const deleted = estate.deleteDocument(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting document:", error);
+      res.status(500).json({ error: error.message || "Failed to delete document" });
+    }
+  });
+
+  // Estate settings
+  app.get("/api/estate/settings", (_req, res) => {
+    try {
+      const settings = estate.getEstateSettings();
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Error fetching estate settings:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch estate settings" });
+    }
+  });
+
+  app.put("/api/estate/settings", (req, res) => {
+    try {
+      const settings = estate.updateEstateSettings(req.body);
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Error updating estate settings:", error);
+      res.status(500).json({ error: error.message || "Failed to update estate settings" });
+    }
+  });
+
+  // ============================================
+  // HOUSEHOLD / FAMILY MODE ENDPOINTS
+  // ============================================
+
+  // Get user's households
+  app.get("/api/households", (req, res) => {
+    try {
+      const userId = (req.query.userId as string) || "user-1"; // Default for demo
+      const households = household.getUserHouseholds(userId);
+      res.json(households);
+    } catch (error: any) {
+      console.error("Error fetching households:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch households" });
+    }
+  });
+
+  // Create household
+  app.post("/api/households", (req, res) => {
+    try {
+      const { name, userId = "user-1", email = "user@example.com", displayName = "User" } = req.body;
+      
+      if (!name) {
+        return res.status(400).json({ error: "Name is required" });
+      }
+      
+      const result = household.createHousehold(name, userId, email, displayName);
+      res.status(201).json(result);
+    } catch (error: any) {
+      console.error("Error creating household:", error);
+      res.status(500).json({ error: error.message || "Failed to create household" });
+    }
+  });
+
+  // Get household members
+  app.get("/api/households/:id/members", (req, res) => {
+    try {
+      const members = household.getHouseholdMembers(req.params.id);
+      res.json(members);
+    } catch (error: any) {
+      console.error("Error fetching household members:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch household members" });
+    }
+  });
+
+  // Invite to household
+  app.post("/api/households/:id/invites", (req, res) => {
+    try {
+      const { email, role, invitedBy = "user-1", inviterName = "User" } = req.body;
+      
+      if (!email || !role) {
+        return res.status(400).json({ error: "Email and role are required" });
+      }
+      
+      const invite = household.createInvite(req.params.id, email, role, invitedBy, inviterName);
+      if (!invite) {
+        return res.status(400).json({ error: "Cannot create invite" });
+      }
+      res.status(201).json(invite);
+    } catch (error: any) {
+      console.error("Error creating invite:", error);
+      res.status(500).json({ error: error.message || "Failed to create invite" });
+    }
+  });
+
+  // Get household invites
+  app.get("/api/households/:id/invites", (req, res) => {
+    try {
+      const invites = household.getHouseholdInvites(req.params.id);
+      res.json(invites);
+    } catch (error: any) {
+      console.error("Error fetching invites:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch invites" });
+    }
+  });
+
+  // Accept invite
+  app.post("/api/invites/:id/accept", (req, res) => {
+    try {
+      const { userId = "user-2", displayName = "New Member" } = req.body;
+      const member = household.acceptInvite(req.params.id, userId, displayName);
+      if (!member) {
+        return res.status(400).json({ error: "Cannot accept invite" });
+      }
+      res.json(member);
+    } catch (error: any) {
+      console.error("Error accepting invite:", error);
+      res.status(500).json({ error: error.message || "Failed to accept invite" });
+    }
+  });
+
+  // Get household activity
+  app.get("/api/households/:id/activity", (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const activity = household.getHouseholdActivity(req.params.id, limit);
+      res.json(activity);
+    } catch (error: any) {
+      console.error("Error fetching activity:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch activity" });
+    }
+  });
+
+  // ============================================
+  // AI ASSISTANT ENDPOINTS
+  // ============================================
+
+  // Send message to AI assistant
+  app.post("/api/ai/chat", async (req, res) => {
+    try {
+      const parseResult = aiQuerySchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid query",
+          details: parseResult.error.errors,
+        });
+      }
+      
+      const userId = (req.body.userId as string) || "user-1";
+      const holdings = await storage.getHoldings();
+      const metrics = await storage.getPortfolioMetrics();
+      
+      const response = await processQuery(parseResult.data, userId, holdings, metrics);
+      res.json(response);
+    } catch (error: any) {
+      console.error("Error processing AI query:", error);
+      res.status(500).json({ error: error.message || "Failed to process query" });
+    }
+  });
+
+  // Get user conversations
+  app.get("/api/ai/conversations", (req, res) => {
+    try {
+      const userId = (req.query.userId as string) || "user-1";
+      const conversations = getUserConversations(userId);
+      res.json(conversations);
+    } catch (error: any) {
+      console.error("Error fetching conversations:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch conversations" });
+    }
+  });
+
+  // Get single conversation
+  app.get("/api/ai/conversations/:id", (req, res) => {
+    try {
+      const userId = (req.query.userId as string) || "user-1";
+      const conversation = getConversation(req.params.id, userId);
+      res.json(conversation);
+    } catch (error: any) {
+      console.error("Error fetching conversation:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch conversation" });
+    }
+  });
+
+  // Delete conversation
+  app.delete("/api/ai/conversations/:id", (req, res) => {
+    try {
+      const userId = (req.query.userId as string) || "user-1";
+      const deleted = deleteConversation(req.params.id, userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting conversation:", error);
+      res.status(500).json({ error: error.message || "Failed to delete conversation" });
     }
   });
 

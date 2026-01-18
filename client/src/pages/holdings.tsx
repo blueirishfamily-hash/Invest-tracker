@@ -533,10 +533,11 @@ export default function Holdings() {
                                   x={x + width / 2}
                                   y={y + height / 2 - (showLabels ? 8 : 0)}
                                   textAnchor="middle"
-                                  fill="hsl(var(--foreground))"
+                                  fill="#000000"
                                   fontSize={showLabels ? 12 : Math.max(8, Math.min(width / 8, 10))}
                                   fontWeight="bold"
                                   dominantBaseline="middle"
+                                  stroke="none"
                                 >
                                   {resolvedEntryName}
                                 </text>
@@ -545,8 +546,9 @@ export default function Holdings() {
                                     x={x + width / 2}
                                     y={y + height / 2 + 8}
                                     textAnchor="middle"
-                                    fill="hsl(var(--muted-foreground))"
+                                    fill="#000000"
                                     fontSize={10}
+                                    stroke="none"
                                   >
                                     {valueText}
                                   </text>
