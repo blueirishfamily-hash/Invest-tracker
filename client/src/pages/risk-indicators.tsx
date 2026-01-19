@@ -59,7 +59,7 @@ interface VIXData {
   historical: Array<{ date: string; value: number }>;
 }
 
-export default function RiskIndicators() {
+export function RiskIndicatorsContent() {
   const [vixTimeframe, setVixTimeframe] = useState<VIXTimeframe>("1Y");
 
   const { data: fearGreed, isLoading, error } = useQuery<FearGreedIndex>({
@@ -91,21 +91,7 @@ export default function RiskIndicators() {
   });
 
   return (
-    <div className="p-6 space-y-6" data-testid="page-risk-indicators">
-      <SEO
-        title="Risk Indicators"
-        description="Monitor market sentiment with the CNN Fear & Greed Index and other risk indicators."
-      />
-
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
-          Risk Indicators
-        </h1>
-        <p className="text-muted-foreground" data-testid="text-page-description">
-          Monitor market sentiment and portfolio risk metrics to inform your investment decisions
-        </p>
-      </div>
-
+    <div className="space-y-6" data-testid="page-risk-indicators">
       <Tabs defaultValue="portfolio" className="space-y-6">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="portfolio" className="flex items-center gap-2">
@@ -615,6 +601,28 @@ export default function RiskIndicators() {
       </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+export default function RiskIndicators() {
+  return (
+    <div className="p-6 space-y-6" data-testid="page-risk-indicators">
+      <SEO
+        title="Risk Indicators"
+        description="Monitor market sentiment with the CNN Fear & Greed Index and other risk indicators."
+      />
+
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
+          Risk Indicators
+        </h1>
+        <p className="text-muted-foreground" data-testid="text-page-description">
+          Monitor market sentiment and portfolio risk metrics to inform your investment decisions
+        </p>
+      </div>
+
+      <RiskIndicatorsContent />
     </div>
   );
 }

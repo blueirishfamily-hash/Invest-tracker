@@ -752,13 +752,376 @@ export const exchangeRateSchema = z.object({
 
 export type ExchangeRates = z.infer<typeof exchangeRateSchema>;
 
+export const portfolioStrategyEnum = z.enum([
+  "Very Conservative",
+  "Conservative",
+  "Moderate",
+  "Aggressive",
+  "Very Aggressive",
+]);
+
 export const userPreferencesSchema = z.object({
+  portfolioStrategy: portfolioStrategyEnum.default("Moderate"),
+  currentAge: z.number().int().min(0).max(120).default(30),
+  retirementAge: z.number().int().min(40).max(100).default(65),
   displayCurrency: z.string().default("USD"),
+  themePreference: z.enum(["system", "light", "dark"]).default("system"),
+  emailNotifications: z.boolean().default(true),
   dateFormat: z.string().default("MM/DD/YYYY"),
   numberFormat: z.string().default("en-US"),
+  cashFlowChartType: z.enum(["sankey", "horizontalBar", "pie"]).default("pie"),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
+
+// ============================================
+// FINANCIAL CORE (ACCOUNTS, TRANSACTIONS, BILLS)
+// ============================================
+
+export const financialInstitutionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  logoUrl: z.string().optional(),
+  primaryColor: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type FinancialInstitution = z.infer<typeof financialInstitutionSchema>;
+
+export const insertFinancialInstitutionSchema = financialInstitutionSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFinancialInstitution = z.infer<typeof insertFinancialInstitutionSchema>;
+
+export const accountTypeEnum = z.enum([
+  "checking",
+  "savings",
+  "credit",
+  "loan",
+  "bnpl",
+  "investment",
+  "cash",
+  "other",
+]);
+
+export const syncStatusEnum = z.enum(["mock", "connected", "disconnected", "error"]);
+
+export const financialAccountSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  institutionId: z.string().optional(),
+  name: z.string(),
+  type: accountTypeEnum,
+  subtype: z.string().optional(),
+  mask: z.string().optional(),
+  balance: z.number(),
+  available: z.number().optional(),
+  creditLimit: z.number().optional(),
+  interestRate: z.number().optional(),
+  currency: z.string().default("USD"),
+  isShared: z.boolean().default(false),
+  syncStatus: syncStatusEnum.default("mock"),
+  lastSyncedAt: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type FinancialAccount = z.infer<typeof financialAccountSchema>;
+
+export const insertFinancialAccountSchema = financialAccountSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertFinancialAccount = z.infer<typeof insertFinancialAccountSchema>;
+
+export const transactionCategorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.enum(["income", "expense", "transfer"]),
+  color: z.string().optional(),
+  icon: z.string().optional(),
+  isSystem: z.boolean().default(false),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type TransactionCategory = z.infer<typeof transactionCategorySchema>;
+
+export const insertTransactionCategorySchema = transactionCategorySchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTransactionCategory = z.infer<typeof insertTransactionCategorySchema>;
+
+export const transactionTagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type TransactionTag = z.infer<typeof transactionTagSchema>;
+
+export const insertTransactionTagSchema = transactionTagSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTransactionTag = z.infer<typeof insertTransactionTagSchema>;
+
+export const transactionSplitSchema = z.object({
+  id: z.string(),
+  transactionId: z.string(),
+  categoryId: z.string().optional(),
+  amount: z.number(),
+  notes: z.string().optional(),
+});
+
+export type TransactionSplit = z.infer<typeof transactionSplitSchema>;
+
+export const transactionSchema = z.object({
+  id: z.string(),
+  accountId: z.string(),
+  date: z.string(),
+  name: z.string(),
+  merchantName: z.string().optional(),
+  amount: z.number(),
+  direction: z.enum(["debit", "credit"]),
+  categoryId: z.string().optional(),
+  appliedRuleId: z.string().optional(), // Track which categorization rule was applied
+  tags: z.array(z.string()).default([]),
+  isPending: z.boolean().default(false),
+  isSplit: z.boolean().default(false),
+  splits: z.array(transactionSplitSchema).optional(),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Transaction = z.infer<typeof transactionSchema>;
+
+export const insertTransactionSchema = transactionSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
+
+export const categoryRuleSchema = z.object({
+  id: z.string(),
+  pattern: z.string(), // keyword or regex (case-insensitive)
+  categoryId: z.string(),
+  confidence: z.number().min(0).max(1), // Computed automatically from acceptance rate
+  acceptedCount: z.number().default(0), // Number of times this rule's categorization was accepted
+  rejectedCount: z.number().default(0), // Number of times this rule's categorization was rejected
+  isActive: z.boolean().default(true),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type CategoryRule = z.infer<typeof categoryRuleSchema>;
+
+export const insertCategoryRuleSchema = categoryRuleSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  confidence: true, // Confidence is computed automatically, not set manually
+});
+
+export type InsertCategoryRule = z.infer<typeof insertCategoryRuleSchema>;
+
+export const billFrequencyEnum = z.enum([
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+  "one-time",
+]);
+
+export const billStatusEnum = z.enum(["scheduled", "paid", "overdue", "canceled"]);
+
+export const billSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  amount: z.number(),
+  dueDate: z.string(),
+  frequency: billFrequencyEnum,
+  categoryId: z.string().optional(),
+  accountId: z.string().optional(),
+  isAutoPay: z.boolean().default(false),
+  reminderDaysBefore: z.array(z.number()).default([3, 1]),
+  status: billStatusEnum.default("scheduled"),
+  lastPaidDate: z.string().optional(),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Bill = z.infer<typeof billSchema>;
+
+export const insertBillSchema = billSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBill = z.infer<typeof insertBillSchema>;
+
+export const subscriptionCadenceEnum = z.enum([
+  "weekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+]);
+
+export const subscriptionStatusEnum = z.enum(["active", "paused", "canceled"]);
+
+export const subscriptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  amount: z.number(),
+  cadence: subscriptionCadenceEnum,
+  nextBillingDate: z.string(),
+  lastBillingDate: z.string().optional(),
+  categoryId: z.string().optional(),
+  paymentAccountId: z.string().optional(),
+  status: subscriptionStatusEnum.default("active"),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Subscription = z.infer<typeof subscriptionSchema>;
+
+export const insertSubscriptionSchema = subscriptionSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+
+// ============================================
+// GOALS & PLANNING (SINKING FUNDS, DEBT, WHAT-IF)
+// ============================================
+
+export const sinkingFundSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  targetAmount: z.number(),
+  currentAmount: z.number().default(0),
+  monthlyContribution: z.number().default(0),
+  dueDate: z.string().optional(),
+  categoryId: z.string().optional(),
+  status: z.enum(["active", "paused", "completed"]).default("active"),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type SinkingFund = z.infer<typeof sinkingFundSchema>;
+
+export const insertSinkingFundSchema = sinkingFundSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSinkingFund = z.infer<typeof insertSinkingFundSchema>;
+
+export const debtItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  balance: z.number(),
+  interestRate: z.number(),
+  minimumPayment: z.number(),
+  dueDate: z.string().optional(),
+  accountId: z.string().optional(),
+});
+
+export type DebtItem = z.infer<typeof debtItemSchema>;
+
+export const debtPlanSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  method: z.enum(["snowball", "avalanche"]),
+  extraPayment: z.number().default(0),
+  debts: z.array(debtItemSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type DebtPlan = z.infer<typeof debtPlanSchema>;
+
+export const insertDebtPlanSchema = debtPlanSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDebtPlan = z.infer<typeof insertDebtPlanSchema>;
+
+export const cashFlowScenarioSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.enum(["income", "expense", "debt"]),
+  amount: z.number(),
+  startDate: z.string(),
+  endDate: z.string().optional(),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type CashFlowScenario = z.infer<typeof cashFlowScenarioSchema>;
+
+export const insertCashFlowScenarioSchema = cashFlowScenarioSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCashFlowScenario = z.infer<typeof insertCashFlowScenarioSchema>;
+
+// ============================================
+// INSIGHTS & ANOMALIES
+// ============================================
+
+export const anomalySchema = z.object({
+  id: z.string(),
+  type: z.enum(["spike", "recurring_increase", "duplicate", "new_merchant"]),
+  transactionId: z.string(),
+  description: z.string(),
+  severity: z.enum(["low", "medium", "high"]).default("low"),
+  createdAt: z.string(),
+});
+
+export type Anomaly = z.infer<typeof anomalySchema>;
+
+// ============================================
+// SECURITY SETTINGS (UI-ONLY)
+// ============================================
+
+export const securitySettingsSchema = z.object({
+  mfaEnabled: z.boolean().default(false),
+  biometricEnabled: z.boolean().default(false),
+  encryptionEnabled: z.boolean().default(true),
+  lastUpdated: z.string().optional(),
+});
+
+export type SecuritySettings = z.infer<typeof securitySettingsSchema>;
 
 // ============================================
 // NESTED ENTITIES (LLCs, Trusts)
@@ -1206,5 +1569,384 @@ export const demoHoldings: Holding[] = [
     market: "NYSE",
     region: "US",
     assetType: "Equity",
+  },
+];
+
+export const demoFinancialInstitutions: FinancialInstitution[] = [
+  {
+    id: "inst-1",
+    name: "Chase",
+    logoUrl: undefined,
+    primaryColor: "#1E3A8A",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "inst-2",
+    name: "Capital One",
+    logoUrl: undefined,
+    primaryColor: "#B91C1C",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "inst-3",
+    name: "Affirm",
+    logoUrl: undefined,
+    primaryColor: "#16A34A",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoFinancialAccounts: FinancialAccount[] = [
+  {
+    id: "acct-1",
+    userId: "user-1",
+    institutionId: "inst-1",
+    name: "Chase Checking",
+    type: "checking",
+    subtype: "Everyday Checking",
+    mask: "1234",
+    balance: 4250.75,
+    available: 4200.75,
+    creditLimit: undefined,
+    interestRate: undefined,
+    currency: "USD",
+    isShared: true,
+    syncStatus: "mock",
+    lastSyncedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "acct-2",
+    userId: "user-1",
+    institutionId: "inst-2",
+    name: "Capital One Savor",
+    type: "credit",
+    subtype: "Rewards",
+    mask: "5678",
+    balance: -890.12,
+    available: undefined,
+    creditLimit: 5000,
+    interestRate: 19.99,
+    currency: "USD",
+    isShared: false,
+    syncStatus: "mock",
+    lastSyncedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "acct-3",
+    userId: "user-1",
+    institutionId: "inst-3",
+    name: "Affirm Purchase Plan",
+    type: "bnpl",
+    subtype: "Installment",
+    mask: "9012",
+    balance: -320.00,
+    available: undefined,
+    creditLimit: undefined,
+    interestRate: 9.99,
+    currency: "USD",
+    isShared: false,
+    syncStatus: "mock",
+    lastSyncedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoTransactionCategories: TransactionCategory[] = [
+  {
+    id: "cat-1",
+    name: "Groceries",
+    type: "expense",
+    color: "#22C55E",
+    icon: "shopping-cart",
+    isSystem: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "cat-2",
+    name: "Dining Out",
+    type: "expense",
+    color: "#F97316",
+    icon: "utensils",
+    isSystem: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "cat-3",
+    name: "Rent",
+    type: "expense",
+    color: "#3B82F6",
+    icon: "home",
+    isSystem: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "cat-4",
+    name: "Salary",
+    type: "income",
+    color: "#16A34A",
+    icon: "briefcase",
+    isSystem: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "cat-5",
+    name: "Utilities",
+    type: "expense",
+    color: "#0EA5E9",
+    icon: "plug",
+    isSystem: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoTransactionTags: TransactionTag[] = [
+  {
+    id: "tag-1",
+    name: "Business",
+    color: "#6366F1",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "tag-2",
+    name: "Family",
+    color: "#EC4899",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoCategoryRules: CategoryRule[] = [
+  {
+    id: "rule-1",
+    pattern: "joe's grill|joes grill|grill",
+    categoryId: "cat-2",
+    confidence: 0.82,
+    acceptedCount: 9,
+    rejectedCount: 2,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "rule-2",
+    pattern: "target",
+    categoryId: "cat-1",
+    confidence: 0.65,
+    acceptedCount: 13,
+    rejectedCount: 7,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoTransactions: Transaction[] = [
+  {
+    id: "txn-1",
+    accountId: "acct-1",
+    date: new Date().toISOString(),
+    name: "Target #1187",
+    merchantName: "Target",
+    amount: -60,
+    direction: "debit",
+    categoryId: "cat-1",
+    tags: ["tag-2"],
+    isPending: false,
+    isSplit: true,
+    splits: [
+      { id: "split-1", transactionId: "txn-1", categoryId: "cat-1", amount: -40, notes: "Groceries" },
+      { id: "split-2", transactionId: "txn-1", categoryId: "cat-5", amount: -20, notes: "Household" },
+    ],
+    notes: "Weekly run",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "txn-2",
+    accountId: "acct-1",
+    date: new Date().toISOString(),
+    name: "Joe's Grill",
+    merchantName: "Joe's Grill",
+    amount: -42.5,
+    direction: "debit",
+    categoryId: "cat-2",
+    tags: [],
+    isPending: false,
+    isSplit: false,
+    splits: undefined,
+    notes: undefined,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "txn-3",
+    accountId: "acct-1",
+    date: new Date().toISOString(),
+    name: "Acme Corp Payroll",
+    merchantName: "Acme Corp",
+    amount: 4200,
+    direction: "credit",
+    categoryId: "cat-4",
+    tags: ["tag-1"],
+    isPending: false,
+    isSplit: false,
+    splits: undefined,
+    notes: undefined,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoBills: Bill[] = [
+  {
+    id: "bill-1",
+    name: "Rent",
+    amount: 2200,
+    dueDate: new Date().toISOString().slice(0, 10),
+    frequency: "monthly",
+    categoryId: "cat-3",
+    accountId: "acct-1",
+    isAutoPay: true,
+    reminderDaysBefore: [7, 3, 1],
+    status: "scheduled",
+    lastPaidDate: undefined,
+    notes: "Due on the 1st",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "bill-2",
+    name: "Electric",
+    amount: 140,
+    dueDate: new Date().toISOString().slice(0, 10),
+    frequency: "monthly",
+    categoryId: "cat-5",
+    accountId: "acct-1",
+    isAutoPay: false,
+    reminderDaysBefore: [3, 1],
+    status: "scheduled",
+    lastPaidDate: undefined,
+    notes: "Average estimate",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoSubscriptions: Subscription[] = [
+  {
+    id: "sub-1",
+    name: "Netflix",
+    amount: 15.99,
+    cadence: "monthly",
+    nextBillingDate: new Date().toISOString().slice(0, 10),
+    lastBillingDate: undefined,
+    categoryId: "cat-2",
+    paymentAccountId: "acct-2",
+    status: "active",
+    notes: "Shared plan",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "sub-2",
+    name: "Spotify",
+    amount: 9.99,
+    cadence: "monthly",
+    nextBillingDate: new Date().toISOString().slice(0, 10),
+    lastBillingDate: undefined,
+    categoryId: "cat-2",
+    paymentAccountId: "acct-2",
+    status: "active",
+    notes: undefined,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoSinkingFunds: SinkingFund[] = [
+  {
+    id: "fund-1",
+    name: "Emergency Fund",
+    targetAmount: 10000,
+    currentAmount: 4200,
+    monthlyContribution: 300,
+    dueDate: undefined,
+    categoryId: undefined,
+    status: "active",
+    notes: "3 months of expenses",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "fund-2",
+    name: "Vacation",
+    targetAmount: 3500,
+    currentAmount: 900,
+    monthlyContribution: 200,
+    dueDate: undefined,
+    categoryId: undefined,
+    status: "active",
+    notes: "Italy 2026",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoDebtPlans: DebtPlan[] = [
+  {
+    id: "debt-1",
+    name: "Debt Freedom Plan",
+    method: "snowball",
+    extraPayment: 150,
+    debts: [
+      {
+        id: "debt-item-1",
+        name: "Student Loan",
+        balance: 18000,
+        interestRate: 4.5,
+        minimumPayment: 220,
+        dueDate: undefined,
+        accountId: undefined,
+      },
+      {
+        id: "debt-item-2",
+        name: "Credit Card",
+        balance: 3200,
+        interestRate: 18.9,
+        minimumPayment: 95,
+        dueDate: undefined,
+        accountId: "acct-2",
+      },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const demoCashFlowScenarios: CashFlowScenario[] = [
+  {
+    id: "scenario-1",
+    name: "New Car Loan",
+    type: "debt",
+    amount: 500,
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: undefined,
+    notes: "Estimate only",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 ];

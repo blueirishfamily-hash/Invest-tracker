@@ -33,7 +33,20 @@ import {
   insertLegalEntitySchema,
   insertBeneficiarySchema,
   insertVaultDocumentSchema,
+  insertFinancialInstitutionSchema,
+  insertFinancialAccountSchema,
+  insertTransactionCategorySchema,
+  insertTransactionTagSchema,
+  insertTransactionSchema,
+  insertBillSchema,
+  insertSubscriptionSchema,
+  insertSinkingFundSchema,
+  insertDebtPlanSchema,
+  insertCashFlowScenarioSchema,
+  insertCategoryRuleSchema,
+  securitySettingsSchema,
   aiQuerySchema,
+  userPreferencesSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(
@@ -101,6 +114,133 @@ export async function registerRoutes(
       `https://assets.alphaquery.com/stock/${ticker}/logo`,
       `https://financialmodelingprep.com/image-stock/${ticker}.png`,
     ].filter(Boolean) as string[];
+  };
+
+  const normalizeMerchant = (name: string) => name.trim().toLowerCase();
+
+  const applyCategoryRules = async (name: string) => {
+    const rules = await storage.getCategoryRules();
+    const normalized = normalizeMerchant(name);
+    let bestMatch: { categoryId: string; ruleId: string; confidence: number } | null = null;
+    for (const rule of rules) {
+      if (!rule.isActive) continue;
+      try {
+        const regex = new RegExp(rule.pattern, "i");
+        if (regex.test(normalized)) {
+          if (!bestMatch || rule.confidence > bestMatch.confidence) {
+            bestMatch = { categoryId: rule.categoryId, ruleId: rule.id, confidence: rule.confidence };
+          }
+        }
+      } catch {
+        // Ignore invalid regex patterns
+        if (normalized.includes(rule.pattern.toLowerCase())) {
+          if (!bestMatch || rule.confidence > bestMatch.confidence) {
+            bestMatch = { categoryId: rule.categoryId, ruleId: rule.id, confidence: rule.confidence };
+          }
+        }
+      }
+    }
+    return bestMatch;
+  };
+
+  const getNextDueDate = (dateString: string, frequency: string) => {
+    const base = new Date(dateString);
+    if (Number.isNaN(base.getTime())) return null;
+    const now = new Date();
+    const next = new Date(base);
+    while (next < now) {
+      switch (frequency) {
+        case "weekly":
+          next.setDate(next.getDate() + 7);
+          break;
+        case "biweekly":
+          next.setDate(next.getDate() + 14);
+          break;
+        case "monthly":
+          next.setMonth(next.getMonth() + 1);
+          break;
+        case "quarterly":
+          next.setMonth(next.getMonth() + 3);
+          break;
+        case "yearly":
+          next.setFullYear(next.getFullYear() + 1);
+          break;
+        case "one-time":
+        default:
+          return base >= now ? base : null;
+      }
+    }
+    return next;
+  };
+
+  const detectAnomalies = async () => {
+    const transactions = await storage.getTransactions();
+    const merchantMap = new Map<string, number[]>();
+    const anomalies: Array<{
+      id: string;
+      type: "spike" | "recurring_increase" | "duplicate" | "new_merchant";
+      transactionId: string;
+      description: string;
+      severity: "low" | "medium" | "high";
+      createdAt: string;
+    }> = [];
+
+    const sorted = [...transactions].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    for (const txn of sorted) {
+      if (txn.direction !== "debit") continue;
+      const key = normalizeMerchant(txn.merchantName || txn.name);
+      const amounts = merchantMap.get(key) || [];
+      if (amounts.length === 0) {
+        anomalies.push({
+          id: `anomaly-${txn.id}`,
+          type: "new_merchant",
+          transactionId: txn.id,
+          description: `New merchant detected: ${txn.merchantName || txn.name}`,
+          severity: "low",
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      const avg =
+        amounts.length > 0 ? amounts.reduce((sum, val) => sum + Math.abs(val), 0) / amounts.length : 0;
+      const absAmount = Math.abs(txn.amount);
+      if (avg > 0 && absAmount > avg * 2.5) {
+        anomalies.push({
+          id: `anomaly-spike-${txn.id}`,
+          type: "spike",
+          transactionId: txn.id,
+          description: `Unusually large charge at ${txn.merchantName || txn.name}`,
+          severity: absAmount > avg * 4 ? "high" : "medium",
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      const recentDuplicates = sorted.filter((candidate) => {
+        if (candidate.id === txn.id) return false;
+        if (normalizeMerchant(candidate.merchantName || candidate.name) !== key) return false;
+        if (Math.abs(candidate.amount - txn.amount) > 0.01) return false;
+        const diff = Math.abs(new Date(candidate.date).getTime() - new Date(txn.date).getTime());
+        return diff <= 2 * 24 * 60 * 60 * 1000;
+      });
+      if (recentDuplicates.length > 0) {
+        anomalies.push({
+          id: `anomaly-dup-${txn.id}`,
+          type: "duplicate",
+          transactionId: txn.id,
+          description: `Possible duplicate charge at ${txn.merchantName || txn.name}`,
+          severity: "medium",
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      amounts.push(txn.amount);
+      merchantMap.set(key, amounts);
+    }
+
+    return anomalies;
   };
 
   app.get("/api/logo", async (req, res) => {
@@ -1606,6 +1746,916 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // FINANCIAL CORE ENDPOINTS
+  // ============================================
+
+  // Institutions
+  app.get("/api/financial-institutions", async (_req, res) => {
+    try {
+      const institutions = await storage.getFinancialInstitutions();
+      res.json(institutions);
+    } catch (error: any) {
+      console.error("Error fetching institutions:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch institutions" });
+    }
+  });
+
+  app.post("/api/financial-institutions", async (req, res) => {
+    try {
+      const parseResult = insertFinancialInstitutionSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid institution data", details: parseResult.error.errors });
+      }
+      const created = await storage.createFinancialInstitution(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating institution:", error);
+      res.status(500).json({ error: error.message || "Failed to create institution" });
+    }
+  });
+
+  app.put("/api/financial-institutions/:id", async (req, res) => {
+    try {
+      const parseResult = insertFinancialInstitutionSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid institution data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateFinancialInstitution(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Institution not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating institution:", error);
+      res.status(500).json({ error: error.message || "Failed to update institution" });
+    }
+  });
+
+  app.delete("/api/financial-institutions/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteFinancialInstitution(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Institution not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting institution:", error);
+      res.status(500).json({ error: error.message || "Failed to delete institution" });
+    }
+  });
+
+  // Accounts
+  app.get("/api/financial-accounts", async (req, res) => {
+    try {
+      const userId = (req.query.userId as string) || "user-1";
+      const accounts = await storage.getFinancialAccounts(userId);
+      res.json(accounts);
+    } catch (error: any) {
+      console.error("Error fetching accounts:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch accounts" });
+    }
+  });
+
+  app.post("/api/financial-accounts", async (req, res) => {
+    try {
+      const parseResult = insertFinancialAccountSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid account data", details: parseResult.error.errors });
+      }
+      const created = await storage.createFinancialAccount(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating account:", error);
+      res.status(500).json({ error: error.message || "Failed to create account" });
+    }
+  });
+
+  app.put("/api/financial-accounts/:id", async (req, res) => {
+    try {
+      const parseResult = insertFinancialAccountSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid account data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateFinancialAccount(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Account not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating account:", error);
+      res.status(500).json({ error: error.message || "Failed to update account" });
+    }
+  });
+
+  app.delete("/api/financial-accounts/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteFinancialAccount(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Account not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting account:", error);
+      res.status(500).json({ error: error.message || "Failed to delete account" });
+    }
+  });
+
+  app.post("/api/financial-accounts/:id/mock-sync", async (req, res) => {
+    try {
+      const account = await storage.updateFinancialAccount(req.params.id, {
+        syncStatus: "mock",
+        lastSyncedAt: new Date().toISOString(),
+      });
+      if (!account) return res.status(404).json({ error: "Account not found" });
+
+      // Add a few mock transactions on sync
+      const mockTransactions = [
+      ];
+      
+      // Get category matches once to avoid duplicate calls
+      const groceryMatch = await applyCategoryRules("Grocery Market");
+      const payrollMatch = await applyCategoryRules("Payroll");
+      
+      const transactions = [
+        {
+          accountId: account.id,
+          date: new Date().toISOString(),
+          name: "Grocery Market",
+          merchantName: "Grocery Market",
+          amount: -82.45,
+          direction: "debit" as const,
+          categoryId: groceryMatch?.categoryId,
+          appliedRuleId: groceryMatch?.ruleId,
+          tags: [],
+          isPending: false,
+          isSplit: false,
+          splits: undefined,
+          notes: "Mock sync",
+        },
+        {
+          accountId: account.id,
+          date: new Date().toISOString(),
+          name: "Paycheck",
+          merchantName: "Employer",
+          amount: 2400,
+          direction: "credit" as const,
+          categoryId: payrollMatch?.categoryId,
+          appliedRuleId: payrollMatch?.ruleId,
+          tags: [],
+          isPending: false,
+          isSplit: false,
+          splits: undefined,
+          notes: "Mock sync",
+        },
+      ];
+      
+      for (const txn of transactions) {
+        await storage.createTransaction(txn);
+      }
+
+      res.json({ success: true, account });
+    } catch (error: any) {
+      console.error("Error syncing account:", error);
+      res.status(500).json({ error: error.message || "Failed to sync account" });
+    }
+  });
+
+  // Categories
+  app.get("/api/transaction-categories", async (_req, res) => {
+    try {
+      const categories = await storage.getTransactionCategories();
+      res.json(categories);
+    } catch (error: any) {
+      console.error("Error fetching categories:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch categories" });
+    }
+  });
+
+  app.post("/api/transaction-categories", async (req, res) => {
+    try {
+      const parseResult = insertTransactionCategorySchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid category data", details: parseResult.error.errors });
+      }
+      const created = await storage.createTransactionCategory(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating category:", error);
+      res.status(500).json({ error: error.message || "Failed to create category" });
+    }
+  });
+
+  app.put("/api/transaction-categories/:id", async (req, res) => {
+    try {
+      const parseResult = insertTransactionCategorySchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid category data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateTransactionCategory(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Category not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating category:", error);
+      res.status(500).json({ error: error.message || "Failed to update category" });
+    }
+  });
+
+  app.delete("/api/transaction-categories/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTransactionCategory(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Category not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting category:", error);
+      res.status(500).json({ error: error.message || "Failed to delete category" });
+    }
+  });
+
+  // Tags
+  app.get("/api/transaction-tags", async (_req, res) => {
+    try {
+      const tags = await storage.getTransactionTags();
+      res.json(tags);
+    } catch (error: any) {
+      console.error("Error fetching tags:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch tags" });
+    }
+  });
+
+  app.post("/api/transaction-tags", async (req, res) => {
+    try {
+      const parseResult = insertTransactionTagSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid tag data", details: parseResult.error.errors });
+      }
+      const created = await storage.createTransactionTag(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating tag:", error);
+      res.status(500).json({ error: error.message || "Failed to create tag" });
+    }
+  });
+
+  app.put("/api/transaction-tags/:id", async (req, res) => {
+    try {
+      const parseResult = insertTransactionTagSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid tag data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateTransactionTag(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Tag not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating tag:", error);
+      res.status(500).json({ error: error.message || "Failed to update tag" });
+    }
+  });
+
+  app.delete("/api/transaction-tags/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTransactionTag(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Tag not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting tag:", error);
+      res.status(500).json({ error: error.message || "Failed to delete tag" });
+    }
+  });
+
+  // Transactions
+  app.get("/api/transactions", async (req, res) => {
+    try {
+      const { accountId, startDate, endDate } = req.query;
+      const transactions = await storage.getTransactions({
+        accountId: accountId as string | undefined,
+        startDate: startDate as string | undefined,
+        endDate: endDate as string | undefined,
+      });
+      res.json(transactions);
+    } catch (error: any) {
+      console.error("Error fetching transactions:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch transactions" });
+    }
+  });
+
+  app.post("/api/transactions", async (req, res) => {
+    try {
+      const parseResult = insertTransactionSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid transaction data", details: parseResult.error.errors });
+      }
+      const data = parseResult.data;
+      let categoryId = data.categoryId;
+      let appliedRuleId: string | undefined;
+      
+      // If user didn't provide a category, try auto-categorization
+      if (!categoryId) {
+        const ruleMatch = await applyCategoryRules(data.merchantName || data.name);
+        if (ruleMatch) {
+          categoryId = ruleMatch.categoryId;
+          appliedRuleId = ruleMatch.ruleId;
+        }
+      }
+      
+      const created = await storage.createTransaction({ ...data, categoryId, appliedRuleId });
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating transaction:", error);
+      res.status(500).json({ error: error.message || "Failed to create transaction" });
+    }
+  });
+
+  app.put("/api/transactions/:id", async (req, res) => {
+    try {
+      const parseResult = insertTransactionSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid transaction data", details: parseResult.error.errors });
+      }
+      
+      // Get existing transaction to check for category changes
+      const existing = await storage.getTransaction(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Transaction not found" });
+      
+      const updates = parseResult.data;
+      const updated = await storage.updateTransaction(req.params.id, updates);
+      if (!updated) return res.status(404).json({ error: "Transaction not found" });
+      
+      // If transaction had an applied rule and category changed, adjust confidence
+      if (existing.appliedRuleId && updates.categoryId !== undefined) {
+        const originalCategoryId = existing.categoryId;
+        const newCategoryId = updated.categoryId;
+        
+        if (newCategoryId !== originalCategoryId) {
+          // User changed the category from the auto-suggested one - this is a rejection
+          await storage.adjustRuleConfidence(existing.appliedRuleId, false);
+          // Clear appliedRuleId after processing to avoid double-counting
+          await storage.updateTransaction(req.params.id, { appliedRuleId: undefined });
+        } else if (originalCategoryId === newCategoryId && originalCategoryId) {
+          // User kept the same category (explicit acceptance)
+          // Only count as acceptance if category was actually set (not uncategorized)
+          await storage.adjustRuleConfidence(existing.appliedRuleId, true);
+          // Clear appliedRuleId after processing to avoid double-counting
+          await storage.updateTransaction(req.params.id, { appliedRuleId: undefined });
+        }
+      }
+      
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating transaction:", error);
+      res.status(500).json({ error: error.message || "Failed to update transaction" });
+    }
+  });
+
+  app.delete("/api/transactions/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteTransaction(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Transaction not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting transaction:", error);
+      res.status(500).json({ error: error.message || "Failed to delete transaction" });
+    }
+  });
+
+  // Bills
+  app.get("/api/bills", async (_req, res) => {
+    try {
+      const bills = await storage.getBills();
+      res.json(bills);
+    } catch (error: any) {
+      console.error("Error fetching bills:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch bills" });
+    }
+  });
+
+  app.post("/api/bills", async (req, res) => {
+    try {
+      const parseResult = insertBillSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid bill data", details: parseResult.error.errors });
+      }
+      const created = await storage.createBill(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating bill:", error);
+      res.status(500).json({ error: error.message || "Failed to create bill" });
+    }
+  });
+
+  app.put("/api/bills/:id", async (req, res) => {
+    try {
+      const parseResult = insertBillSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid bill data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateBill(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Bill not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating bill:", error);
+      res.status(500).json({ error: error.message || "Failed to update bill" });
+    }
+  });
+
+  app.delete("/api/bills/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteBill(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Bill not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting bill:", error);
+      res.status(500).json({ error: error.message || "Failed to delete bill" });
+    }
+  });
+
+  // Subscriptions
+  app.get("/api/subscriptions", async (_req, res) => {
+    try {
+      const subscriptions = await storage.getSubscriptions();
+      res.json(subscriptions);
+    } catch (error: any) {
+      console.error("Error fetching subscriptions:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch subscriptions" });
+    }
+  });
+
+  app.post("/api/subscriptions", async (req, res) => {
+    try {
+      const parseResult = insertSubscriptionSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid subscription data", details: parseResult.error.errors });
+      }
+      const created = await storage.createSubscription(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating subscription:", error);
+      res.status(500).json({ error: error.message || "Failed to create subscription" });
+    }
+  });
+
+  app.put("/api/subscriptions/:id", async (req, res) => {
+    try {
+      const parseResult = insertSubscriptionSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid subscription data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateSubscription(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Subscription not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating subscription:", error);
+      res.status(500).json({ error: error.message || "Failed to update subscription" });
+    }
+  });
+
+  app.delete("/api/subscriptions/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSubscription(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Subscription not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting subscription:", error);
+      res.status(500).json({ error: error.message || "Failed to delete subscription" });
+    }
+  });
+
+  // Sinking Funds
+  app.get("/api/sinking-funds", async (_req, res) => {
+    try {
+      const funds = await storage.getSinkingFunds();
+      res.json(funds);
+    } catch (error: any) {
+      console.error("Error fetching sinking funds:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch sinking funds" });
+    }
+  });
+
+  app.post("/api/sinking-funds", async (req, res) => {
+    try {
+      const parseResult = insertSinkingFundSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid sinking fund data", details: parseResult.error.errors });
+      }
+      const created = await storage.createSinkingFund(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating sinking fund:", error);
+      res.status(500).json({ error: error.message || "Failed to create sinking fund" });
+    }
+  });
+
+  app.put("/api/sinking-funds/:id", async (req, res) => {
+    try {
+      const parseResult = insertSinkingFundSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid sinking fund data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateSinkingFund(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Sinking fund not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating sinking fund:", error);
+      res.status(500).json({ error: error.message || "Failed to update sinking fund" });
+    }
+  });
+
+  app.delete("/api/sinking-funds/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSinkingFund(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Sinking fund not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting sinking fund:", error);
+      res.status(500).json({ error: error.message || "Failed to delete sinking fund" });
+    }
+  });
+
+  // Debt Plans
+  app.get("/api/debt-plans", async (_req, res) => {
+    try {
+      const plans = await storage.getDebtPlans();
+      res.json(plans);
+    } catch (error: any) {
+      console.error("Error fetching debt plans:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch debt plans" });
+    }
+  });
+
+  app.post("/api/debt-plans", async (req, res) => {
+    try {
+      const parseResult = insertDebtPlanSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid debt plan data", details: parseResult.error.errors });
+      }
+      const created = await storage.createDebtPlan(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating debt plan:", error);
+      res.status(500).json({ error: error.message || "Failed to create debt plan" });
+    }
+  });
+
+  app.put("/api/debt-plans/:id", async (req, res) => {
+    try {
+      const parseResult = insertDebtPlanSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid debt plan data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateDebtPlan(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Debt plan not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating debt plan:", error);
+      res.status(500).json({ error: error.message || "Failed to update debt plan" });
+    }
+  });
+
+  app.delete("/api/debt-plans/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteDebtPlan(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Debt plan not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting debt plan:", error);
+      res.status(500).json({ error: error.message || "Failed to delete debt plan" });
+    }
+  });
+
+  // What-if Scenarios
+  app.get("/api/cash-flow-scenarios", async (_req, res) => {
+    try {
+      const scenarios = await storage.getCashFlowScenarios();
+      res.json(scenarios);
+    } catch (error: any) {
+      console.error("Error fetching scenarios:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch scenarios" });
+    }
+  });
+
+  app.post("/api/cash-flow-scenarios", async (req, res) => {
+    try {
+      const parseResult = insertCashFlowScenarioSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid scenario data", details: parseResult.error.errors });
+      }
+      const created = await storage.createCashFlowScenario(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating scenario:", error);
+      res.status(500).json({ error: error.message || "Failed to create scenario" });
+    }
+  });
+
+  app.put("/api/cash-flow-scenarios/:id", async (req, res) => {
+    try {
+      const parseResult = insertCashFlowScenarioSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid scenario data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateCashFlowScenario(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Scenario not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating scenario:", error);
+      res.status(500).json({ error: error.message || "Failed to update scenario" });
+    }
+  });
+
+  app.delete("/api/cash-flow-scenarios/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCashFlowScenario(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Scenario not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting scenario:", error);
+      res.status(500).json({ error: error.message || "Failed to delete scenario" });
+    }
+  });
+
+  // Category rules
+  app.get("/api/category-rules", async (_req, res) => {
+    try {
+      const rules = await storage.getCategoryRules();
+      res.json(rules);
+    } catch (error: any) {
+      console.error("Error fetching category rules:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch category rules" });
+    }
+  });
+
+  app.post("/api/category-rules", async (req, res) => {
+    try {
+      const parseResult = insertCategoryRuleSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid rule data", details: parseResult.error.errors });
+      }
+      const created = await storage.createCategoryRule(parseResult.data);
+      res.status(201).json(created);
+    } catch (error: any) {
+      console.error("Error creating category rule:", error);
+      res.status(500).json({ error: error.message || "Failed to create category rule" });
+    }
+  });
+
+  app.put("/api/category-rules/:id", async (req, res) => {
+    try {
+      const parseResult = insertCategoryRuleSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid rule data", details: parseResult.error.errors });
+      }
+      const updated = await storage.updateCategoryRule(req.params.id, parseResult.data);
+      if (!updated) return res.status(404).json({ error: "Rule not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating category rule:", error);
+      res.status(500).json({ error: error.message || "Failed to update category rule" });
+    }
+  });
+
+  app.delete("/api/category-rules/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteCategoryRule(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Rule not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting category rule:", error);
+      res.status(500).json({ error: error.message || "Failed to delete category rule" });
+    }
+  });
+
+  // Cash flow snapshot (safe-to-spend)
+  app.get("/api/cash-flow/snapshot", async (req, res) => {
+    try {
+      const userId = (req.query.userId as string) || "user-1";
+      const accounts = await storage.getFinancialAccounts(userId);
+      const totalBalance = accounts.reduce((sum, acct) => sum + acct.balance, 0);
+      const bills = await storage.getBills();
+      const subscriptions = await storage.getSubscriptions();
+
+      const now = new Date();
+      const windowEnd = new Date();
+      windowEnd.setDate(windowEnd.getDate() + 30);
+
+      const upcomingBills = bills
+        .map((bill) => {
+          const nextDate = getNextDueDate(bill.dueDate, bill.frequency);
+          if (!nextDate) return null;
+          if (nextDate < now || nextDate > windowEnd) return null;
+          return { ...bill, nextDueDate: nextDate.toISOString().slice(0, 10) };
+        })
+        .filter(Boolean);
+
+      const upcomingSubscriptions = subscriptions.filter((sub) => {
+        const next = new Date(sub.nextBillingDate);
+        return next >= now && next <= windowEnd;
+      });
+
+      const transactions = await storage.getTransactions({ startDate: new Date(Date.now() - 30 * 86400000).toISOString() });
+      const expectedIncome = transactions
+        .filter((txn) => txn.direction === "credit")
+        .reduce((sum, txn) => sum + txn.amount, 0);
+
+      const billsTotal = upcomingBills.reduce((sum: number, bill: any) => sum + bill.amount, 0);
+      const subsTotal = upcomingSubscriptions.reduce((sum, sub) => sum + sub.amount, 0);
+      const safeToSpend = totalBalance + expectedIncome - billsTotal - subsTotal;
+
+      res.json({
+        totalBalance,
+        expectedIncome,
+        upcomingBills,
+        upcomingSubscriptions,
+        billsTotal,
+        subsTotal,
+        safeToSpend,
+      });
+    } catch (error: any) {
+      console.error("Error calculating cash flow snapshot:", error);
+      res.status(500).json({ error: error.message || "Failed to calculate cash flow snapshot" });
+    }
+  });
+
+  // What-if projection
+  app.post("/api/what-if/projection", async (req, res) => {
+    try {
+      const schema = z.object({
+        months: z.number().int().min(1).max(36).default(6),
+        scenarioType: z.enum(["income", "expense", "debt"]),
+        scenarioAmount: z.number(),
+      });
+      const parseResult = schema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid scenario input", details: parseResult.error.errors });
+      }
+      const { months, scenarioType, scenarioAmount } = parseResult.data;
+      const userId = (req.body.userId as string) || "user-1";
+      const accounts = await storage.getFinancialAccounts(userId);
+      const totalBalance = accounts.reduce((sum, acct) => sum + acct.balance, 0);
+      const transactions = await storage.getTransactions({ startDate: new Date(Date.now() - 30 * 86400000).toISOString() });
+      const income = transactions.filter((txn) => txn.direction === "credit").reduce((sum, txn) => sum + txn.amount, 0);
+      const expenses = transactions.filter((txn) => txn.direction === "debit").reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
+
+      const scenarioDelta = scenarioType === "income" ? scenarioAmount : -scenarioAmount;
+      const monthlyNet = income - expenses + scenarioDelta;
+
+      const projection = [];
+      let running = totalBalance;
+      for (let i = 1; i <= months; i += 1) {
+        running += monthlyNet;
+        projection.push({ month: i, projectedBalance: running });
+      }
+      res.json({ baseBalance: totalBalance, monthlyNet, projection });
+    } catch (error: any) {
+      console.error("Error running what-if projection:", error);
+      res.status(500).json({ error: error.message || "Failed to run projection" });
+    }
+  });
+
+  // Spending analytics
+  app.get("/api/insights/spending-analytics", async (req, res) => {
+    try {
+      const months = parseInt(req.query.months as string) || 6;
+      const transactions = await storage.getTransactions();
+      const categories = await storage.getTransactionCategories();
+      const categoryLookup = new Map(categories.map((cat) => [cat.id, cat]));
+
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+      const monthly: Array<{ month: string; total: number; categories: Record<string, number> }> = [];
+
+      for (let i = 0; i < months; i += 1) {
+        const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1);
+        const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 0, 23, 59, 59);
+        const monthTransactions = transactions.filter((txn) => {
+          const date = new Date(txn.date);
+          return date >= monthStart && date <= monthEnd && txn.direction === "debit";
+        });
+        const categoriesTotals: Record<string, number> = {};
+        let total = 0;
+        for (const txn of monthTransactions) {
+          const categoryName = txn.categoryId ? categoryLookup.get(txn.categoryId)?.name || "Uncategorized" : "Uncategorized";
+          const amount = Math.abs(txn.amount);
+          categoriesTotals[categoryName] = (categoriesTotals[categoryName] || 0) + amount;
+          total += amount;
+        }
+        monthly.push({
+          month: `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`,
+          total,
+          categories: categoriesTotals,
+        });
+      }
+
+      const averageByCategory: Record<string, number> = {};
+      for (const month of monthly) {
+        for (const [category, value] of Object.entries(month.categories)) {
+          averageByCategory[category] = (averageByCategory[category] || 0) + value / months;
+        }
+      }
+
+      res.json({ monthly, averageByCategory });
+    } catch (error: any) {
+      console.error("Error fetching spending analytics:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch analytics" });
+    }
+  });
+
+  // Anomaly detection
+  app.get("/api/anomalies", async (_req, res) => {
+    try {
+      const anomalies = await detectAnomalies();
+      await storage.setAnomalies(anomalies);
+      res.json(anomalies);
+    } catch (error: any) {
+      console.error("Error detecting anomalies:", error);
+      res.status(500).json({ error: error.message || "Failed to detect anomalies" });
+    }
+  });
+
+  // Data export (CSV)
+  app.get("/api/exports/transactions.csv", async (_req, res) => {
+    try {
+      const transactions = await storage.getTransactions();
+      const categories = await storage.getTransactionCategories();
+      const categoryLookup = new Map(categories.map((cat) => [cat.id, cat.name]));
+      const rows = [
+        ["Date", "Merchant", "Name", "Amount", "Direction", "Category", "Tags"].join(","),
+        ...transactions.map((txn) => [
+          new Date(txn.date).toISOString().slice(0, 10),
+          `"${txn.merchantName || ""}"`,
+          `"${txn.name}"`,
+          txn.amount.toFixed(2),
+          txn.direction,
+          `"${txn.categoryId ? categoryLookup.get(txn.categoryId) || "" : ""}"`,
+          `"${txn.tags.join("|")}"`,
+        ].join(",")),
+      ];
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=transactions.csv");
+      res.send(rows.join("\n"));
+    } catch (error: any) {
+      console.error("Error exporting transactions:", error);
+      res.status(500).json({ error: error.message || "Failed to export transactions" });
+    }
+  });
+
+  // Security settings (UI-only)
+  app.get("/api/security-settings", async (_req, res) => {
+    try {
+      const userId = "default-user-id";
+      const settings = await storage.getSecuritySettings(userId);
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Error fetching security settings:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch security settings" });
+    }
+  });
+
+  app.put("/api/security-settings", async (req, res) => {
+    try {
+      const parseResult = securitySettingsSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid security settings data",
+          details: parseResult.error.errors,
+        });
+      }
+      const userId = "default-user-id";
+      const updated = await storage.updateSecuritySettings(userId, parseResult.data);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating security settings:", error);
+      res.status(500).json({ error: error.message || "Failed to update security settings" });
+    }
+  });
+
+  // ============================================
+  // SETTINGS ENDPOINTS
+  // ============================================
+
+  // Get user settings
+  app.get("/api/settings", async (_req, res) => {
+    try {
+      const userId = "default-user-id";
+      const settings = await storage.getUserPreferences(userId);
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch settings" });
+    }
+  });
+
+  // Update user settings
+  app.put("/api/settings", async (req, res) => {
+    try {
+      const parseResult = userPreferencesSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid settings data",
+          details: parseResult.error.errors,
+        });
+      }
+
+      const userId = "default-user-id";
+      const updated = await storage.updateUserPreferences(userId, parseResult.data);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating settings:", error);
+      res.status(500).json({ error: error.message || "Failed to update settings" });
+    }
+  });
+
+  // ============================================
   // LEGAL ENTITIES ENDPOINTS
   // ============================================
 
@@ -1973,8 +3023,9 @@ export async function registerRoutes(
       const userId = (req.body.userId as string) || "user-1";
       const holdings = await storage.getHoldings();
       const metrics = await storage.getPortfolioMetrics();
+      const preferences = await storage.getUserPreferences(userId);
       
-      const response = await processQuery(parseResult.data, userId, holdings, metrics);
+      const response = await processQuery(parseResult.data, userId, holdings, metrics, preferences);
       res.json(response);
     } catch (error: any) {
       console.error("Error processing AI query:", error);

@@ -52,7 +52,7 @@ function formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
 }
 
-export default function Dividends() {
+export function DividendsContent() {
   const [sortField, setSortField] = useState<"date" | "ticker" | "amount">("date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -130,8 +130,7 @@ export default function Dividends() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6" data-testid="page-dividends">
-        <SEO title="Dividends" description="View your dividend schedule and expected payments" />
+      <div className="space-y-6" data-testid="page-dividends">
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -141,8 +140,7 @@ export default function Dividends() {
 
   if (error) {
     return (
-      <div className="p-6 space-y-6" data-testid="page-dividends">
-        <SEO title="Dividends" description="View your dividend schedule and expected payments" />
+      <div className="space-y-6" data-testid="page-dividends">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -161,20 +159,7 @@ export default function Dividends() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="page-dividends">
-      <SEO
-        title="Dividends"
-        description="View your dividend schedule and expected payments for the current year"
-      />
-
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
-          Dividend Tracker
-        </h1>
-        <p className="text-muted-foreground" data-testid="text-page-description">
-          Dividend schedule for {data?.year || new Date().getFullYear()}
-        </p>
-      </div>
+    <div className="space-y-6" data-testid="page-dividends">
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -308,6 +293,32 @@ export default function Dividends() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+export default function Dividends() {
+  const { data } = useQuery<DividendScheduleResponse>({
+    queryKey: ["/api/dividends/schedule"],
+  });
+
+  return (
+    <div className="p-6 space-y-6" data-testid="page-dividends">
+      <SEO
+        title="Dividends"
+        description="View your dividend schedule and expected payments for the current year"
+      />
+
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
+          Dividend Tracker
+        </h1>
+        <p className="text-muted-foreground" data-testid="text-page-description">
+          Dividend schedule for {data?.year || new Date().getFullYear()}
+        </p>
+      </div>
+
+      <DividendsContent />
     </div>
   );
 }

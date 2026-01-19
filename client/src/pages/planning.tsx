@@ -308,7 +308,7 @@ function PercentileTable({
   );
 }
 
-export default function Planning() {
+export function PlanningContent() {
   // Form state
   const [currentValue, setCurrentValue] = useState(100000);
   const [annualContribution, setAnnualContribution] = useState(20000);
@@ -375,22 +375,7 @@ export default function Planning() {
   }, [defaults]);
 
   return (
-    <div className="p-6 space-y-6" data-testid="page-planning">
-      <SEO
-        title="Financial Planning"
-        description="Monte Carlo simulations to project your path to financial independence."
-      />
-
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
-          Financial Planning
-        </h1>
-        <p className="text-muted-foreground" data-testid="text-page-description">
-          Monte Carlo simulations, tax planning, and cash flow projections
-        </p>
-      </div>
-
-      <Tabs defaultValue="monte-carlo" className="space-y-6">
+    <Tabs defaultValue="monte-carlo" className="space-y-6">
         <TabsList className="grid w-full max-w-lg grid-cols-3">
           <TabsTrigger value="monte-carlo" className="flex items-center gap-2">
             <Calculator className="h-4 w-4" />
@@ -695,6 +680,27 @@ export default function Planning() {
           <CashFlowTab />
         </TabsContent>
       </Tabs>
+  );
+}
+
+export default function Planning() {
+  return (
+    <div className="p-6 space-y-6" data-testid="page-planning">
+      <SEO
+        title="Financial Planning"
+        description="Monte Carlo simulations to project your path to financial independence."
+      />
+
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
+          Financial Planning
+        </h1>
+        <p className="text-muted-foreground" data-testid="text-page-description">
+          Monte Carlo simulations, tax planning, and cash flow projections
+        </p>
+      </div>
+
+      <PlanningContent />
     </div>
   );
 }

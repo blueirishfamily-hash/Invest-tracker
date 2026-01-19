@@ -16,13 +16,14 @@ import { Progress } from "@/components/ui/progress";
 import { SEO } from "@/components/seo";
 import { 
   FileHeart, Users, FileText, Settings, Plus, Trash2, Edit2, 
-  AlertTriangle, CheckCircle2, Clock, Shield
+  AlertTriangle, CheckCircle2, Clock, Shield, Target, Calculator, Receipt, Wallet
 } from "lucide-react";
 import type { 
   Beneficiary, InsertBeneficiary, Relationship,
   VaultDocument, InsertVaultDocument, DocumentType,
   EstateSettings,
 } from "@shared/schema";
+import { PlanningContent } from "./planning";
 
 const relationships: Relationship[] = [
   "Spouse", "Child", "Parent", "Sibling", "Grandchild", "Friend", "Charity", "Trust", "Other"
@@ -177,21 +178,40 @@ export default function Estate() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <FileHeart className="h-6 w-6" />
-            Estate & Beneficiary Vault
+            Estate & Planning
           </h1>
           <p className="text-muted-foreground">
-            Secure storage for important documents and beneficiary information
+            Financial planning, estate management, and beneficiary information
           </p>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-md grid-cols-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="beneficiaries">Beneficiaries</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+      <Tabs defaultValue="planning" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="planning">
+            <Calculator className="h-4 w-4 mr-2" />
+            Planning
+          </TabsTrigger>
+          <TabsTrigger value="estate">
+            <FileHeart className="h-4 w-4 mr-2" />
+            Estate
+          </TabsTrigger>
         </TabsList>
+
+        {/* Planning Tab - Will import Planning component */}
+        <TabsContent value="planning" className="mt-6">
+          <PlanningTab />
+        </TabsContent>
+
+        {/* Estate Tab */}
+        <TabsContent value="estate" className="mt-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full max-w-md grid-cols-4">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="beneficiaries">Beneficiaries</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
@@ -604,7 +624,14 @@ export default function Estate() {
             </CardContent>
           </Card>
         </TabsContent>
+          </Tabs>
+        </TabsContent>
       </Tabs>
     </div>
   );
+}
+
+// Planning Tab Component
+function PlanningTab() {
+  return <PlanningContent />;
 }

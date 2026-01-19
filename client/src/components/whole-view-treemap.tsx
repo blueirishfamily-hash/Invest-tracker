@@ -54,6 +54,43 @@ function getFallbackColor(name: string): string {
   return `hsl(${hash % 360}, 65%, 55%)`;
 }
 
+// Generate consistent color for an asset based on its name/ticker
+// This ensures the same asset always has the same color regardless of filters
+// Uses multiple hash passes to create more varied and distinct colors
+function getAssetColor(assetName: string, assetType?: string): string {
+  // Use both name and type for hash to differentiate same names in different asset types
+  const seed = assetType ? `${assetType}:${assetName}` : assetName;
+  
+  // Create a better hash using multiple passes and better distribution
+  let hash1 = 0;
+  let hash2 = 0;
+  for (let i = 0; i < seed.length; i++) {
+    const char = seed.charCodeAt(i);
+    hash1 = ((hash1 << 5) - hash1) + char;
+    hash1 = hash1 & hash1; // Convert to 32bit integer
+    hash2 = hash2 + char * (i + 1); // Second hash for saturation/lightness
+  }
+  
+  // Use first hash for hue - distribute across full color wheel
+  // Use golden ratio multiplier for better distribution
+  const goldenRatio = 0.618033988749895;
+  const hue = Math.abs(hash1) * goldenRatio % 360;
+  
+  // Use second hash for saturation - vary between 55% and 85% for more variety
+  const saturation = 55 + (Math.abs(hash2) % 30);
+  
+  // Vary lightness between 45% and 65% for better contrast
+  // Use a different calculation from the seed for lightness
+  let lightnessHash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    lightnessHash = ((lightnessHash << 3) - lightnessHash) + seed.charCodeAt(i);
+    lightnessHash = lightnessHash & lightnessHash;
+  }
+  const lightness = 45 + (Math.abs(lightnessHash) % 20);
+  
+  return `hsl(${Math.round(hue)}, ${saturation}%, ${lightness}%)`;
+}
+
 // Calculate color intensity for returns/performance mode
 function getColorIntensity(value: number, maxValue: number, isPositive: boolean): string {
   if (maxValue === 0) {
@@ -67,8 +104,11 @@ function getColorIntensity(value: number, maxValue: number, isPositive: boolean)
     : `hsl(0, ${saturation}%, ${Math.max(25, Math.min(45, lightness))}%)`;
 }
 
-export function WholeViewTab() {
+export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<string> }) {
   const [metric, setMetric] = useState<Metric>("percentage");
+  
+  // Default to all categories if not provided
+  const activeCategories = selectedCategories || new Set(["stocks", "realEstate", "crypto", "collectibles", "altInvestments"]);
 
   // Fetch all asset types
   const { data: holdings } = useQuery<Holding[]>({
@@ -95,8 +135,8 @@ export function WholeViewTab() {
   const treemapData = useMemo(() => {
     const allAssets: TreemapAsset[] = [];
 
-    // Add holdings
-    if (holdings) {
+    // Add holdings (if stocks category is selected)
+    if (holdings && activeCategories.has("stocks")) {
       holdings.forEach((holding) => {
         allAssets.push({
           name: holding.ticker,
@@ -111,8 +151,8 @@ export function WholeViewTab() {
       });
     }
 
-    // Add real estate
-    if (realEstate) {
+    // Add real estate (if realEstate category is selected)
+    if (realEstate && activeCategories.has("realEstate")) {
       realEstate.forEach((property) => {
         const value = property.estimatedValue;
         allAssets.push({
@@ -128,8 +168,8 @@ export function WholeViewTab() {
       });
     }
 
-    // Add crypto
-    if (crypto) {
+    // Add crypto (if crypto category is selected)
+    if (crypto && activeCategories.has("crypto")) {
       crypto.forEach((cryptoAsset) => {
         allAssets.push({
           name: cryptoAsset.symbol,
@@ -144,8 +184,8 @@ export function WholeViewTab() {
       });
     }
 
-    // Add collectibles
-    if (collectibles) {
+    // Add collectibles (if collectibles category is selected)
+    if (collectibles && activeCategories.has("collectibles")) {
       collectibles.forEach((collectible) => {
         const value = collectible.estimatedValue || 0;
         allAssets.push({
@@ -161,8 +201,8 @@ export function WholeViewTab() {
       });
     }
 
-    // Add alternative investments
-    if (altInvestments) {
+    // Add alternative investments (if altInvestments category is selected)
+    if (altInvestments && activeCategories.has("altInvestments")) {
       altInvestments.forEach((altInv) => {
         const value = altInv.currentNAV || 0;
         allAssets.push({
@@ -215,13 +255,7 @@ export function WholeViewTab() {
     });
 
     return data.filter(item => item.value > 0);
-  }, [holdings, realEstate, crypto, collectibles, altInvestments, metric]);
-
-  // Generate distinct colors for percentage mode
-  const distinctColors = useMemo(() => {
-    if (!treemapData || treemapData.length === 0) return [];
-    return generateDistinctColors(treemapData.length);
-  }, [treemapData]);
+  }, [holdings, realEstate, crypto, collectibles, altInvestments, metric, activeCategories]);
 
   // Calculate max absolute value for intensity-based coloring
   const maxAbsValue = useMemo(() => {
@@ -229,18 +263,48 @@ export function WholeViewTab() {
     return Math.max(...treemapData.map(d => Math.abs(d.actualValue)));
   }, [treemapData]);
 
-  // Create lookup map for colors
+  // Create lookup map for colors with locked colors per asset
   const treemapLookup = useMemo(() => {
     const map = new Map<string, { asset: TreemapAsset; actualValue: number; color: string }>();
-    treemapData.forEach((entry, index) => {
+    treemapData.forEach((entry) => {
       const isPositive = entry.actualValue >= 0;
-      const color = (metric === "performance" || metric === "returns")
-        ? getColorIntensity(entry.actualValue, maxAbsValue, isPositive)
-        : distinctColors[index] || getFallbackColor(entry.name);
+      let color: string;
+      
+      if (metric === "performance" || metric === "returns") {
+        // For performance/returns mode, use intensity-based coloring with green/red
+        // but blend with locked base hue for asset identification
+        const baseColor = getAssetColor(entry.name, entry.type);
+        const hueMatch = baseColor.match(/hsl\((\d+),/);
+        const baseHue = hueMatch ? parseInt(hueMatch[1]) : 0;
+        
+        // Calculate intensity
+        const intensity = maxAbsValue > 0 ? Math.abs(entry.actualValue) / maxAbsValue : 0;
+        const lightness = 45 - (intensity * 20);
+        const saturation = 65;
+        
+        // Use green (142) for positive, red (0) for negative, but blend slightly with base hue
+        const targetHue = isPositive ? 142 : 0;
+        // Blend: 70% target hue, 30% base hue for slight asset differentiation
+        const blendedHue = Math.round(targetHue * 0.7 + baseHue * 0.3);
+        color = `hsl(${blendedHue}, ${saturation}%, ${Math.max(25, Math.min(45, lightness))}%)`;
+      } else {
+        // For percentage mode, use locked color based on asset name/type
+        color = getAssetColor(entry.name, entry.type);
+      }
+      
       map.set(entry.name, { asset: entry, actualValue: entry.actualValue, color });
     });
     return map;
-  }, [treemapData, metric, distinctColors, maxAbsValue]);
+  }, [treemapData, metric, maxAbsValue]);
+
+  // Generate color map for legend (only for percentage mode)
+  const assetColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    treemapData.forEach((entry) => {
+      map.set(entry.name, getAssetColor(entry.name, entry.type));
+    });
+    return map;
+  }, [treemapData]);
 
   const isLoading = !holdings && !realEstate && !crypto && !collectibles && !altInvestments;
 
@@ -338,8 +402,16 @@ export function WholeViewTab() {
                     }
                   }
 
+                  // Create unique clipPath ID for this tile
+                  const clipId = `clip-${Math.round(x)}-${Math.round(y)}-${Math.round(width)}-${Math.round(height)}`;
+                  
                   return (
                     <g>
+                      <defs>
+                        <clipPath id={clipId}>
+                          <rect x={x} y={y} width={width} height={height} />
+                        </clipPath>
+                      </defs>
                       <rect
                         x={x}
                         y={y}
@@ -349,7 +421,7 @@ export function WholeViewTab() {
                         stroke="#fff"
                       />
                       {resolvedEntryName && (
-                        <>
+                        <g clipPath={`url(#${clipId})`}>
                           <text
                             x={x + width / 2}
                             y={y + height / 2 - (showLabels ? 8 : 0)}
@@ -374,7 +446,7 @@ export function WholeViewTab() {
                               {valueText}
                             </text>
                           )}
-                        </>
+                        </g>
                       )}
                     </g>
                   );
@@ -389,32 +461,25 @@ export function WholeViewTab() {
                   labelStyle={{ color: "hsl(var(--foreground))" }}
                   formatter={(value: number, payload: any) => {
                     const data = payload?.payload || payload;
-                    if (!data || !data.asset) return [value, ""];
+                    if (!data || !data.asset) return ["", ""];
                     
                     const asset = data.asset;
-                    const actualValue = data.actualValue || 0;
+                    // Always show exact current value
+                    const currentValue = formatCurrency(asset.currentValue || 0);
                     
-                    let formattedValue: string;
-                    switch (metric) {
-                      case "performance":
-                        formattedValue = `${actualValue >= 0 ? "+" : ""}${actualValue.toFixed(2)}%`;
-                        break;
-                      case "returns":
-                        formattedValue = `${formatCurrency(actualValue)} (${
-                          asset.costBasis > 0 
-                            ? formatPercent((actualValue / asset.costBasis) * 100)
-                            : "0%"
-                        })`;
-                        break;
-                      case "percentage":
-                      default:
-                        formattedValue = `${actualValue.toFixed(2)}%`;
-                        break;
-                    }
-                    
-                    return [formattedValue, asset.fullName || asset.name || ""];
+                    // Return value and asset class
+                    return [currentValue, asset.type || ""];
                   }}
-                  labelFormatter={(label) => `${label} (${treemapLookup.get(label)?.asset.type || "Asset"})`}
+                  labelFormatter={(label) => {
+                    const entry = treemapLookup.get(label);
+                    if (entry) {
+                      // Show asset name/ticker and asset class
+                      const assetName = entry.asset.fullName || entry.asset.name || label;
+                      const assetClass = entry.asset.type || "";
+                      return `${assetName} (${assetClass})`;
+                    }
+                    return label;
+                  }}
                 />
               </Treemap>
             </ResponsiveContainer>
@@ -422,13 +487,16 @@ export function WholeViewTab() {
         )}
         {treemapData.length > 0 && metric === "percentage" && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {treemapData.map((entry, index) => (
-              <div key={entry.name} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: distinctColors[index] }} />
-                <span className="text-sm text-muted-foreground">{entry.name}</span>
-                <span className="text-xs text-muted-foreground">({entry.type})</span>
-              </div>
-            ))}
+            {treemapData.map((entry) => {
+              const color = assetColorMap.get(entry.name) || getAssetColor(entry.name, entry.type);
+              return (
+                <div key={entry.name} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
+                  <span className="text-sm text-muted-foreground">{entry.name}</span>
+                  <span className="text-xs text-muted-foreground">({entry.type})</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>

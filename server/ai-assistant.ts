@@ -12,6 +12,7 @@ import type {
   AIResponse,
   Holding,
   PortfolioMetrics,
+  UserPreferences,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -107,7 +108,8 @@ export function deleteConversation(conversationId: string, userId: string): bool
  */
 function buildPortfolioContext(
   holdings: Holding[],
-  metrics: PortfolioMetrics | null
+  metrics: PortfolioMetrics | null,
+  preferences: UserPreferences | null
 ): string {
   if (holdings.length === 0) {
     return "The user has no holdings in their portfolio.";
@@ -134,7 +136,7 @@ function buildPortfolioContext(
   const gainers = holdings.filter(h => h.currentValue > h.costBasis);
   const losers = holdings.filter(h => h.currentValue < h.costBasis);
   
-  return `
+  let context = `
 Portfolio Summary:
 - Total Value: $${totalValue.toLocaleString()}
 - Cost Basis: $${totalCostBasis.toLocaleString()}
@@ -152,6 +154,16 @@ ${Object.entries(sectorBreakdown)
 Top 5 Holdings:
 ${topHoldings.map((h, i) => `${i + 1}. ${h}`).join('\n')}
 `.trim();
+
+  // Add user preferences if available
+  if (preferences) {
+    context += `\n\nUser Preferences:
+- Portfolio Strategy: ${preferences.portfolioStrategy}
+- Current Age: ${preferences.currentAge || 'Not specified'}
+- Retirement Age: ${preferences.retirementAge || 'Not specified'}`;
+  }
+
+  return context;
 }
 
 /**
@@ -328,9 +340,19 @@ function generateRuleBasedResponse(
     };
   }
   
+  // Investment strategy questions
+  if (lowerMessage.includes("strategy") || lowerMessage.includes("recommendation") || lowerMessage.includes("investment advice") || lowerMessage.includes("asset allocation")) {
+    return {
+      response: `I'd be happy to provide investment strategy recommendations! However, I need more context to give you personalized advice.\n\n**To get the best recommendations, please:**\n1. Set your portfolio strategy in Settings (Very Conservative, Conservative, Moderate, Aggressive, or Very Aggressive)\n2. Provide your current age and retirement age in Settings\n3. Ask me specific questions like:\n   - "What asset allocation should I use for my [strategy] portfolio?"\n   - "What specific investments do you recommend for my risk profile?"\n   - "How should I rebalance my portfolio?"\n\n**I can help you with:**\n• Detailed explanations of why certain strategies fit your profile\n• Specific asset allocation percentages\n• Step-by-step rebalancing instructions\n• Recommended asset classes and investment vehicles\n• Implementation timelines and considerations\n\nVisit Settings to configure your preferences, then ask me for personalized recommendations!`,
+      suggestedActions: [
+        { label: "Go to Settings", action: "navigate", params: { path: "/settings" } },
+      ],
+    };
+  }
+  
   // Default response
   return {
-    response: `I'm your financial assistant! I can help you with:\n\n• **Portfolio Overview**: "What's my total portfolio value?"\n• **Top Holdings**: "Show me my top holdings"\n• **Performance**: "Which stocks are my best/worst performers?"\n• **Sectors**: "How is my portfolio allocated?"\n• **Dividends**: "When are my next dividends?"\n• **Risk**: "What's my portfolio risk?"\n• **Taxes**: "Help with tax planning"\n\nFeel free to ask me anything about your portfolio!`,
+    response: `I'm your financial assistant! I can help you with:\n\n• **Portfolio Overview**: "What's my total portfolio value?"\n• **Top Holdings**: "Show me my top holdings"\n• **Performance**: "Which stocks are my best/worst performers?"\n• **Sectors**: "How is my portfolio allocated?"\n• **Dividends**: "When are my next dividends?"\n• **Risk**: "What's my portfolio risk?"\n• **Taxes**: "Help with tax planning"\n• **Investment Strategy**: "Give me investment recommendations"\n\nWhen I provide investment advice, I'll give you:\n• **Detailed explanations** of why each recommendation fits your strategy\n• **Specific actionable steps** you can take to implement changes\n• **Clear guidance** on allocation percentages, timing, and execution\n\nFeel free to ask me anything about your portfolio!`,
   };
 }
 
@@ -341,7 +363,8 @@ export async function processQuery(
   query: AIQuery,
   userId: string,
   holdings: Holding[],
-  metrics: PortfolioMetrics | null
+  metrics: PortfolioMetrics | null,
+  preferences: UserPreferences | null = null
 ): Promise<AIResponse> {
   const conversation = getConversation(query.conversationId, userId);
   
@@ -353,14 +376,34 @@ export async function processQuery(
   
   // Try OpenAI first if API key is available
   if (OPENAI_API_KEY && query.includePortfolioContext) {
-    const portfolioContext = buildPortfolioContext(holdings, metrics);
+    const portfolioContext = buildPortfolioContext(holdings, metrics, preferences);
+    const strategyGuidance = preferences?.portfolioStrategy 
+      ? `\n\nThe user's investment strategy is: ${preferences.portfolioStrategy}. When providing investment recommendations, tailor them to match this risk profile. For ${preferences.portfolioStrategy} strategies, consider appropriate asset allocation, risk levels, and investment vehicles.`
+      : '';
+    
     const systemPrompt = `You are a helpful financial assistant for a wealth tracking app called Sila. 
 You have access to the user's portfolio data and can provide personalized insights.
 
-${portfolioContext}
+${portfolioContext}${strategyGuidance}
 
-Provide concise, actionable advice. Use markdown formatting for clarity.
-If asked about specific features, mention the relevant pages in the app (Dashboard, Holdings, Analysis, Dividends, Planning, Risk Indicators).`;
+When providing investment advice or recommendations, you MUST:
+1. **Provide detailed explanations**: Explain the reasoning behind each recommendation, including why it aligns with their strategy, risk profile, and goals.
+2. **Give specific actionable steps**: Break down recommendations into clear, step-by-step actions the user can take. Include:
+   - What specific assets or asset classes to consider
+   - How much to allocate (percentages or dollar amounts)
+   - When to implement changes (immediate, gradual, etc.)
+   - How to execute (e.g., "Rebalance your portfolio by selling X% of Y and buying Z")
+   - Any considerations or warnings
+
+Format your responses with:
+- Clear headings and sections
+- Bullet points for steps
+- Bold text for important concepts
+- Specific numbers and percentages when relevant
+
+Use markdown formatting for clarity.
+If asked about specific features, mention the relevant pages in the app (Dashboard, Holdings, Analysis, Dividends, Planning, Risk Indicators).
+When providing investment strategy recommendations, always align them with the user's selected portfolio strategy and provide both explanations and actionable steps.`;
     
     const messages = conversation.messages.map(m => ({
       role: m.role,

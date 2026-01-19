@@ -24,11 +24,48 @@ import {
   type AlternativeInvestment,
   type InsertAlternativeInvestment,
   type NetWorthSummary,
+  type FinancialInstitution,
+  type InsertFinancialInstitution,
+  type FinancialAccount,
+  type InsertFinancialAccount,
+  type TransactionCategory,
+  type InsertTransactionCategory,
+  type TransactionTag,
+  type InsertTransactionTag,
+  type Transaction,
+  type InsertTransaction,
+  type Bill,
+  type InsertBill,
+  type Subscription,
+  type InsertSubscription,
+  type SinkingFund,
+  type InsertSinkingFund,
+  type DebtPlan,
+  type InsertDebtPlan,
+  type CashFlowScenario,
+  type InsertCashFlowScenario,
+  type CategoryRule,
+  type InsertCategoryRule,
+  type Anomaly,
+  type SecuritySettings,
+  type UserPreferences,
+  userPreferencesSchema,
   demoHoldings,
   demoRealEstate,
   demoCryptoAssets,
   demoCollectibles,
   demoAlternativeInvestments,
+  demoFinancialInstitutions,
+  demoFinancialAccounts,
+  demoTransactionCategories,
+  demoTransactionTags,
+  demoCategoryRules,
+  demoTransactions,
+  demoBills,
+  demoSubscriptions,
+  demoSinkingFunds,
+  demoDebtPlans,
+  demoCashFlowScenarios,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import {
@@ -93,8 +130,75 @@ export interface IStorage {
   updateAlternativeInvestment(id: string, updates: Partial<InsertAlternativeInvestment>): Promise<AlternativeInvestment | undefined>;
   deleteAlternativeInvestment(id: string): Promise<boolean>;
 
+  // User Preferences
+  getUserPreferences(userId: string): Promise<UserPreferences>;
+  updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences>;
+
   // Net Worth
   getNetWorthSummary(): Promise<NetWorthSummary>;
+
+  // Financial Core
+  getFinancialInstitutions(): Promise<FinancialInstitution[]>;
+  createFinancialInstitution(institution: InsertFinancialInstitution): Promise<FinancialInstitution>;
+  updateFinancialInstitution(id: string, updates: Partial<InsertFinancialInstitution>): Promise<FinancialInstitution | undefined>;
+  deleteFinancialInstitution(id: string): Promise<boolean>;
+
+  getFinancialAccounts(userId?: string): Promise<FinancialAccount[]>;
+  createFinancialAccount(account: InsertFinancialAccount): Promise<FinancialAccount>;
+  updateFinancialAccount(id: string, updates: Partial<InsertFinancialAccount>): Promise<FinancialAccount | undefined>;
+  deleteFinancialAccount(id: string): Promise<boolean>;
+
+  getTransactionCategories(): Promise<TransactionCategory[]>;
+  createTransactionCategory(category: InsertTransactionCategory): Promise<TransactionCategory>;
+  updateTransactionCategory(id: string, updates: Partial<InsertTransactionCategory>): Promise<TransactionCategory | undefined>;
+  deleteTransactionCategory(id: string): Promise<boolean>;
+
+  getTransactionTags(): Promise<TransactionTag[]>;
+  createTransactionTag(tag: InsertTransactionTag): Promise<TransactionTag>;
+  updateTransactionTag(id: string, updates: Partial<InsertTransactionTag>): Promise<TransactionTag | undefined>;
+  deleteTransactionTag(id: string): Promise<boolean>;
+
+  getTransactions(filters?: { accountId?: string; startDate?: string; endDate?: string }): Promise<Transaction[]>;
+  getTransaction(id: string): Promise<Transaction | undefined>;
+  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
+  updateTransaction(id: string, updates: Partial<InsertTransaction>): Promise<Transaction | undefined>;
+  deleteTransaction(id: string): Promise<boolean>;
+
+  getBills(): Promise<Bill[]>;
+  createBill(bill: InsertBill): Promise<Bill>;
+  updateBill(id: string, updates: Partial<InsertBill>): Promise<Bill | undefined>;
+  deleteBill(id: string): Promise<boolean>;
+
+  getSubscriptions(): Promise<Subscription[]>;
+  createSubscription(subscription: InsertSubscription): Promise<Subscription>;
+  updateSubscription(id: string, updates: Partial<InsertSubscription>): Promise<Subscription | undefined>;
+  deleteSubscription(id: string): Promise<boolean>;
+
+  getSinkingFunds(): Promise<SinkingFund[]>;
+  createSinkingFund(fund: InsertSinkingFund): Promise<SinkingFund>;
+  updateSinkingFund(id: string, updates: Partial<InsertSinkingFund>): Promise<SinkingFund | undefined>;
+  deleteSinkingFund(id: string): Promise<boolean>;
+
+  getDebtPlans(): Promise<DebtPlan[]>;
+  createDebtPlan(plan: InsertDebtPlan): Promise<DebtPlan>;
+  updateDebtPlan(id: string, updates: Partial<InsertDebtPlan>): Promise<DebtPlan | undefined>;
+  deleteDebtPlan(id: string): Promise<boolean>;
+
+  getCashFlowScenarios(): Promise<CashFlowScenario[]>;
+  createCashFlowScenario(scenario: InsertCashFlowScenario): Promise<CashFlowScenario>;
+  updateCashFlowScenario(id: string, updates: Partial<InsertCashFlowScenario>): Promise<CashFlowScenario | undefined>;
+  deleteCashFlowScenario(id: string): Promise<boolean>;
+
+  getCategoryRules(): Promise<CategoryRule[]>;
+  createCategoryRule(rule: InsertCategoryRule): Promise<CategoryRule>;
+  updateCategoryRule(id: string, updates: Partial<InsertCategoryRule>): Promise<CategoryRule | undefined>;
+  deleteCategoryRule(id: string): Promise<boolean>;
+
+  getAnomalies(): Promise<Anomaly[]>;
+  setAnomalies(anomalies: Anomaly[]): Promise<void>;
+
+  getSecuritySettings(userId: string): Promise<SecuritySettings>;
+  updateSecuritySettings(userId: string, updates: Partial<SecuritySettings>): Promise<SecuritySettings>;
 }
 
 export class MemStorage implements IStorage {
@@ -105,6 +209,20 @@ export class MemStorage implements IStorage {
   private cryptoAssets: Map<string, CryptoAsset>;
   private collectibles: Map<string, Collectible>;
   private alternativeInvestments: Map<string, AlternativeInvestment>;
+  private userPreferences: Map<string, UserPreferences>;
+  private financialInstitutions: Map<string, FinancialInstitution>;
+  private financialAccounts: Map<string, FinancialAccount>;
+  private transactionCategories: Map<string, TransactionCategory>;
+  private transactionTags: Map<string, TransactionTag>;
+  private transactions: Map<string, Transaction>;
+  private bills: Map<string, Bill>;
+  private subscriptions: Map<string, Subscription>;
+  private sinkingFunds: Map<string, SinkingFund>;
+  private debtPlans: Map<string, DebtPlan>;
+  private cashFlowScenarios: Map<string, CashFlowScenario>;
+  private categoryRules: Map<string, CategoryRule>;
+  private anomalies: Anomaly[];
+  private securitySettings: Map<string, SecuritySettings>;
 
   constructor() {
     this.users = new Map();
@@ -114,6 +232,20 @@ export class MemStorage implements IStorage {
     this.cryptoAssets = new Map();
     this.collectibles = new Map();
     this.alternativeInvestments = new Map();
+    this.userPreferences = new Map();
+    this.financialInstitutions = new Map();
+    this.financialAccounts = new Map();
+    this.transactionCategories = new Map();
+    this.transactionTags = new Map();
+    this.transactions = new Map();
+    this.bills = new Map();
+    this.subscriptions = new Map();
+    this.sinkingFunds = new Map();
+    this.debtPlans = new Map();
+    this.cashFlowScenarios = new Map();
+    this.categoryRules = new Map();
+    this.anomalies = [];
+    this.securitySettings = new Map();
     
     // Initialize with demo data
     for (const holding of demoHoldings) {
@@ -131,6 +263,52 @@ export class MemStorage implements IStorage {
     for (const investment of demoAlternativeInvestments) {
       this.alternativeInvestments.set(investment.id, investment);
     }
+    for (const institution of demoFinancialInstitutions) {
+      this.financialInstitutions.set(institution.id, institution);
+    }
+    for (const account of demoFinancialAccounts) {
+      this.financialAccounts.set(account.id, account);
+    }
+    for (const category of demoTransactionCategories) {
+      this.transactionCategories.set(category.id, category);
+    }
+    for (const tag of demoTransactionTags) {
+      this.transactionTags.set(tag.id, tag);
+    }
+    for (const rule of demoCategoryRules) {
+      this.categoryRules.set(rule.id, rule);
+    }
+    for (const transaction of demoTransactions) {
+      this.transactions.set(transaction.id, transaction);
+    }
+    for (const bill of demoBills) {
+      this.bills.set(bill.id, bill);
+    }
+    for (const subscription of demoSubscriptions) {
+      this.subscriptions.set(subscription.id, subscription);
+    }
+    for (const fund of demoSinkingFunds) {
+      this.sinkingFunds.set(fund.id, fund);
+    }
+    for (const plan of demoDebtPlans) {
+      this.debtPlans.set(plan.id, plan);
+    }
+    for (const scenario of demoCashFlowScenarios) {
+      this.cashFlowScenarios.set(scenario.id, scenario);
+    }
+  }
+
+  private getDefaultPreferences(): UserPreferences {
+    return userPreferencesSchema.parse({});
+  }
+
+  private getDefaultSecuritySettings(): SecuritySettings {
+    return {
+      mfaEnabled: false,
+      biometricEnabled: false,
+      encryptionEnabled: true,
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -148,6 +326,21 @@ export class MemStorage implements IStorage {
     const user: User = { ...insertUser, id };
     this.users.set(id, user);
     return user;
+  }
+
+  async getUserPreferences(userId: string): Promise<UserPreferences> {
+    const existing = this.userPreferences.get(userId);
+    if (existing) return existing;
+    const defaults = this.getDefaultPreferences();
+    this.userPreferences.set(userId, defaults);
+    return defaults;
+  }
+
+  async updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences> {
+    const current = await this.getUserPreferences(userId);
+    const merged = userPreferencesSchema.parse({ ...current, ...updates });
+    this.userPreferences.set(userId, merged);
+    return merged;
   }
 
   async getHoldings(): Promise<Holding[]> {
@@ -1955,6 +2148,519 @@ export class MemStorage implements IStorage {
 
   async deleteAlternativeInvestment(id: string): Promise<boolean> {
     return this.alternativeInvestments.delete(id);
+  }
+
+  // ============================================
+  // FINANCIAL CORE METHODS
+  // ============================================
+
+  async getFinancialInstitutions(): Promise<FinancialInstitution[]> {
+    return Array.from(this.financialInstitutions.values());
+  }
+
+  async createFinancialInstitution(
+    institution: InsertFinancialInstitution
+  ): Promise<FinancialInstitution> {
+    const id = `inst-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newInstitution: FinancialInstitution = {
+      ...institution,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.financialInstitutions.set(id, newInstitution);
+    return newInstitution;
+  }
+
+  async updateFinancialInstitution(
+    id: string,
+    updates: Partial<InsertFinancialInstitution>
+  ): Promise<FinancialInstitution | undefined> {
+    const existing = this.financialInstitutions.get(id);
+    if (!existing) return undefined;
+    const updated: FinancialInstitution = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.financialInstitutions.set(id, updated);
+    return updated;
+  }
+
+  async deleteFinancialInstitution(id: string): Promise<boolean> {
+    return this.financialInstitutions.delete(id);
+  }
+
+  async getFinancialAccounts(userId?: string): Promise<FinancialAccount[]> {
+    const accounts = Array.from(this.financialAccounts.values());
+    if (!userId) return accounts;
+    return accounts.filter((account) => account.userId === userId);
+  }
+
+  async createFinancialAccount(
+    account: InsertFinancialAccount
+  ): Promise<FinancialAccount> {
+    const id = `acct-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newAccount: FinancialAccount = {
+      ...account,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.financialAccounts.set(id, newAccount);
+    return newAccount;
+  }
+
+  async updateFinancialAccount(
+    id: string,
+    updates: Partial<InsertFinancialAccount>
+  ): Promise<FinancialAccount | undefined> {
+    const existing = this.financialAccounts.get(id);
+    if (!existing) return undefined;
+    const updated: FinancialAccount = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.financialAccounts.set(id, updated);
+    return updated;
+  }
+
+  async deleteFinancialAccount(id: string): Promise<boolean> {
+    return this.financialAccounts.delete(id);
+  }
+
+  async getTransactionCategories(): Promise<TransactionCategory[]> {
+    return Array.from(this.transactionCategories.values());
+  }
+
+  async createTransactionCategory(
+    category: InsertTransactionCategory
+  ): Promise<TransactionCategory> {
+    const id = `cat-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newCategory: TransactionCategory = {
+      ...category,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.transactionCategories.set(id, newCategory);
+    return newCategory;
+  }
+
+  async updateTransactionCategory(
+    id: string,
+    updates: Partial<InsertTransactionCategory>
+  ): Promise<TransactionCategory | undefined> {
+    const existing = this.transactionCategories.get(id);
+    if (!existing) return undefined;
+    const updated: TransactionCategory = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.transactionCategories.set(id, updated);
+    return updated;
+  }
+
+  async deleteTransactionCategory(id: string): Promise<boolean> {
+    return this.transactionCategories.delete(id);
+  }
+
+  async getTransactionTags(): Promise<TransactionTag[]> {
+    return Array.from(this.transactionTags.values());
+  }
+
+  async createTransactionTag(
+    tag: InsertTransactionTag
+  ): Promise<TransactionTag> {
+    const id = `tag-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newTag: TransactionTag = {
+      ...tag,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.transactionTags.set(id, newTag);
+    return newTag;
+  }
+
+  async updateTransactionTag(
+    id: string,
+    updates: Partial<InsertTransactionTag>
+  ): Promise<TransactionTag | undefined> {
+    const existing = this.transactionTags.get(id);
+    if (!existing) return undefined;
+    const updated: TransactionTag = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.transactionTags.set(id, updated);
+    return updated;
+  }
+
+  async deleteTransactionTag(id: string): Promise<boolean> {
+    return this.transactionTags.delete(id);
+  }
+
+  async getTransactions(filters?: {
+    accountId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<Transaction[]> {
+    let transactions = Array.from(this.transactions.values());
+    if (filters?.accountId) {
+      transactions = transactions.filter((txn) => txn.accountId === filters.accountId);
+    }
+    if (filters?.startDate) {
+      const start = new Date(filters.startDate).getTime();
+      transactions = transactions.filter((txn) => new Date(txn.date).getTime() >= start);
+    }
+    if (filters?.endDate) {
+      const end = new Date(filters.endDate).getTime();
+      transactions = transactions.filter((txn) => new Date(txn.date).getTime() <= end);
+    }
+    return transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+
+  async getTransaction(id: string): Promise<Transaction | undefined> {
+    return this.transactions.get(id);
+  }
+
+  async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
+    const id = `txn-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newTransaction: Transaction = {
+      ...transaction,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.transactions.set(id, newTransaction);
+    return newTransaction;
+  }
+
+  async updateTransaction(
+    id: string,
+    updates: Partial<InsertTransaction>
+  ): Promise<Transaction | undefined> {
+    const existing = this.transactions.get(id);
+    if (!existing) return undefined;
+    const updated: Transaction = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.transactions.set(id, updated);
+    return updated;
+  }
+
+  async deleteTransaction(id: string): Promise<boolean> {
+    return this.transactions.delete(id);
+  }
+
+  async getBills(): Promise<Bill[]> {
+    return Array.from(this.bills.values());
+  }
+
+  async createBill(bill: InsertBill): Promise<Bill> {
+    const id = `bill-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newBill: Bill = {
+      ...bill,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.bills.set(id, newBill);
+    return newBill;
+  }
+
+  async updateBill(
+    id: string,
+    updates: Partial<InsertBill>
+  ): Promise<Bill | undefined> {
+    const existing = this.bills.get(id);
+    if (!existing) return undefined;
+    const updated: Bill = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.bills.set(id, updated);
+    return updated;
+  }
+
+  async deleteBill(id: string): Promise<boolean> {
+    return this.bills.delete(id);
+  }
+
+  async getSubscriptions(): Promise<Subscription[]> {
+    return Array.from(this.subscriptions.values());
+  }
+
+  async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
+    const id = `sub-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newSubscription: Subscription = {
+      ...subscription,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.subscriptions.set(id, newSubscription);
+    return newSubscription;
+  }
+
+  async updateSubscription(
+    id: string,
+    updates: Partial<InsertSubscription>
+  ): Promise<Subscription | undefined> {
+    const existing = this.subscriptions.get(id);
+    if (!existing) return undefined;
+    const updated: Subscription = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.subscriptions.set(id, updated);
+    return updated;
+  }
+
+  async deleteSubscription(id: string): Promise<boolean> {
+    return this.subscriptions.delete(id);
+  }
+
+  async getSinkingFunds(): Promise<SinkingFund[]> {
+    return Array.from(this.sinkingFunds.values());
+  }
+
+  async createSinkingFund(fund: InsertSinkingFund): Promise<SinkingFund> {
+    const id = `fund-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newFund: SinkingFund = {
+      ...fund,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sinkingFunds.set(id, newFund);
+    return newFund;
+  }
+
+  async updateSinkingFund(
+    id: string,
+    updates: Partial<InsertSinkingFund>
+  ): Promise<SinkingFund | undefined> {
+    const existing = this.sinkingFunds.get(id);
+    if (!existing) return undefined;
+    const updated: SinkingFund = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.sinkingFunds.set(id, updated);
+    return updated;
+  }
+
+  async deleteSinkingFund(id: string): Promise<boolean> {
+    return this.sinkingFunds.delete(id);
+  }
+
+  async getDebtPlans(): Promise<DebtPlan[]> {
+    return Array.from(this.debtPlans.values());
+  }
+
+  async createDebtPlan(plan: InsertDebtPlan): Promise<DebtPlan> {
+    const id = `debt-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newPlan: DebtPlan = {
+      ...plan,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.debtPlans.set(id, newPlan);
+    return newPlan;
+  }
+
+  async updateDebtPlan(
+    id: string,
+    updates: Partial<InsertDebtPlan>
+  ): Promise<DebtPlan | undefined> {
+    const existing = this.debtPlans.get(id);
+    if (!existing) return undefined;
+    const updated: DebtPlan = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.debtPlans.set(id, updated);
+    return updated;
+  }
+
+  async deleteDebtPlan(id: string): Promise<boolean> {
+    return this.debtPlans.delete(id);
+  }
+
+  async getCashFlowScenarios(): Promise<CashFlowScenario[]> {
+    return Array.from(this.cashFlowScenarios.values());
+  }
+
+  async createCashFlowScenario(
+    scenario: InsertCashFlowScenario
+  ): Promise<CashFlowScenario> {
+    const id = `scenario-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newScenario: CashFlowScenario = {
+      ...scenario,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.cashFlowScenarios.set(id, newScenario);
+    return newScenario;
+  }
+
+  async updateCashFlowScenario(
+    id: string,
+    updates: Partial<InsertCashFlowScenario>
+  ): Promise<CashFlowScenario | undefined> {
+    const existing = this.cashFlowScenarios.get(id);
+    if (!existing) return undefined;
+    const updated: CashFlowScenario = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.cashFlowScenarios.set(id, updated);
+    return updated;
+  }
+
+  async deleteCashFlowScenario(id: string): Promise<boolean> {
+    return this.cashFlowScenarios.delete(id);
+  }
+
+  async getCategoryRules(): Promise<CategoryRule[]> {
+    return Array.from(this.categoryRules.values());
+  }
+
+  async createCategoryRule(rule: InsertCategoryRule): Promise<CategoryRule> {
+    const id = `rule-${randomUUID()}`;
+    const now = new Date().toISOString();
+    const newRule: CategoryRule = {
+      ...rule,
+      id,
+      confidence: 0.5, // Initial neutral confidence
+      acceptedCount: 0,
+      rejectedCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.categoryRules.set(id, newRule);
+    return newRule;
+  }
+
+  async updateCategoryRule(
+    id: string,
+    updates: Partial<InsertCategoryRule>
+  ): Promise<CategoryRule | undefined> {
+    const existing = this.categoryRules.get(id);
+    if (!existing) return undefined;
+    
+    // Prevent manual confidence updates - it's computed automatically
+    const { confidence, ...allowedUpdates } = updates as any;
+    
+    // Use updated counts if provided, otherwise use existing counts
+    const acceptedCount = (allowedUpdates as any).acceptedCount ?? existing.acceptedCount;
+    const rejectedCount = (allowedUpdates as any).rejectedCount ?? existing.rejectedCount;
+    
+    const updated: CategoryRule = {
+      ...existing,
+      ...allowedUpdates,
+      id,
+      // Recalculate confidence based on acceptance rate using updated counts
+      confidence: this.calculateConfidence(acceptedCount, rejectedCount),
+      updatedAt: new Date().toISOString(),
+    };
+    this.categoryRules.set(id, updated);
+    return updated;
+  }
+
+  // Calculate confidence from acceptance rate
+  calculateConfidence(acceptedCount: number, rejectedCount: number): number {
+    const total = acceptedCount + rejectedCount;
+    if (total === 0) return 0.5; // Neutral starting point if no data
+    return acceptedCount / total;
+  }
+
+  // Adjust rule confidence based on user acceptance/rejection
+  async adjustRuleConfidence(ruleId: string, accepted: boolean): Promise<CategoryRule | undefined> {
+    const existing = this.categoryRules.get(ruleId);
+    if (!existing) return undefined;
+
+    const newAcceptedCount = accepted ? existing.acceptedCount + 1 : existing.acceptedCount;
+    const newRejectedCount = accepted ? existing.rejectedCount : existing.rejectedCount + 1;
+    const newConfidence = this.calculateConfidence(newAcceptedCount, newRejectedCount);
+
+    const updated: CategoryRule = {
+      ...existing,
+      acceptedCount: newAcceptedCount,
+      rejectedCount: newRejectedCount,
+      confidence: newConfidence,
+      updatedAt: new Date().toISOString(),
+    };
+    this.categoryRules.set(ruleId, updated);
+    return updated;
+  }
+
+  async deleteCategoryRule(id: string): Promise<boolean> {
+    return this.categoryRules.delete(id);
+  }
+
+  async getAnomalies(): Promise<Anomaly[]> {
+    return this.anomalies;
+  }
+
+  async setAnomalies(anomalies: Anomaly[]): Promise<void> {
+    this.anomalies = anomalies;
+  }
+
+  async getSecuritySettings(userId: string): Promise<SecuritySettings> {
+    const existing = this.securitySettings.get(userId);
+    if (existing) return existing;
+    const defaults = this.getDefaultSecuritySettings();
+    this.securitySettings.set(userId, defaults);
+    return defaults;
+  }
+
+  async updateSecuritySettings(
+    userId: string,
+    updates: Partial<SecuritySettings>
+  ): Promise<SecuritySettings> {
+    const current = await this.getSecuritySettings(userId);
+    const merged: SecuritySettings = {
+      ...current,
+      ...updates,
+      lastUpdated: new Date().toISOString(),
+    };
+    this.securitySettings.set(userId, merged);
+    return merged;
   }
 
   // ============================================

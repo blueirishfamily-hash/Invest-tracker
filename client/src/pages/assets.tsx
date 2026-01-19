@@ -36,7 +36,13 @@ const formatCurrencyDetailed = (value: number) => {
 };
 
 // Net Worth Summary Card
-function NetWorthCard() {
+function NetWorthCard({ 
+  selectedCategories, 
+  onCategoryToggle 
+}: { 
+  selectedCategories: Set<string>;
+  onCategoryToggle: (category: string) => void;
+}) {
   const { data: netWorth, isLoading } = useQuery<NetWorthSummary>({
     queryKey: ["/api/net-worth"],
   });
@@ -62,11 +68,11 @@ function NetWorthCard() {
   if (!netWorth) return null;
 
   const categories = [
-    { label: "Stocks & ETFs", value: netWorth.stocksAndETFs, icon: TrendingUp, color: "text-blue-500" },
-    { label: "Real Estate", value: netWorth.realEstate, icon: Home, color: "text-green-500" },
-    { label: "Crypto", value: netWorth.crypto, icon: Bitcoin, color: "text-orange-500" },
-    { label: "Collectibles", value: netWorth.collectibles, icon: Gem, color: "text-purple-500" },
-    { label: "Alt Investments", value: netWorth.alternativeInvestments, icon: Briefcase, color: "text-cyan-500" },
+    { label: "Stocks & ETFs", value: netWorth.stocksAndETFs, icon: TrendingUp, color: "text-blue-500", key: "stocks" },
+    { label: "Real Estate", value: netWorth.realEstate, icon: Home, color: "text-green-500", key: "realEstate" },
+    { label: "Crypto", value: netWorth.crypto, icon: Bitcoin, color: "text-orange-500", key: "crypto" },
+    { label: "Collectibles", value: netWorth.collectibles, icon: Gem, color: "text-purple-500", key: "collectibles" },
+    { label: "Alt Investments", value: netWorth.alternativeInvestments, icon: Briefcase, color: "text-cyan-500", key: "altInvestments" },
   ];
 
   return (
@@ -86,15 +92,29 @@ function NetWorthCard() {
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {categories.map((cat) => (
-            <div key={cat.label} className="p-3 rounded-lg bg-muted/50">
-              <div className="flex items-center gap-2 mb-1">
-                <cat.icon className={`h-4 w-4 ${cat.color}`} />
-                <span className="text-xs text-muted-foreground">{cat.label}</span>
+          {categories.map((cat) => {
+            const isSelected = selectedCategories.has(cat.key);
+            return (
+              <div
+                key={cat.label}
+                onClick={() => onCategoryToggle(cat.key)}
+                className={`p-3 rounded-lg bg-muted/50 cursor-pointer transition-all hover:shadow-md ${
+                  isSelected 
+                    ? "ring-2 ring-primary opacity-100" 
+                    : "opacity-50 hover:opacity-75"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <cat.icon className={`h-4 w-4 ${cat.color}`} />
+                  <span className="text-xs text-muted-foreground">{cat.label}</span>
+                  {isSelected && (
+                    <span className="ml-auto text-primary text-xs">✓</span>
+                  )}
+                </div>
+                <div className="font-semibold">{formatCurrency(cat.value)}</div>
               </div>
-              <div className="font-semibold">{formatCurrency(cat.value)}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -1392,6 +1412,23 @@ function AlternativeInvestmentsTab() {
 
 // Main Assets Page
 export default function AssetsPage() {
+  // Category filter state - all categories selected by default
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
+    new Set(["stocks", "realEstate", "crypto", "collectibles", "altInvestments"])
+  );
+
+  const handleCategoryToggle = (category: string) => {
+    setSelectedCategories((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+      }
+      return newSet;
+    });
+  };
+
   return (
     <>
       <SEO
@@ -1406,7 +1443,10 @@ export default function AssetsPage() {
           </p>
         </div>
 
-        <NetWorthCard />
+        <NetWorthCard 
+          selectedCategories={selectedCategories}
+          onCategoryToggle={handleCategoryToggle}
+        />
 
         <Tabs defaultValue="holdings" className="space-y-4">
           <TabsList className="grid w-full grid-cols-6">
@@ -1457,7 +1497,7 @@ export default function AssetsPage() {
           </TabsContent>
 
           <TabsContent value="whole-view">
-            <WholeViewTab />
+            <WholeViewTab selectedCategories={selectedCategories} />
           </TabsContent>
         </Tabs>
       </div>

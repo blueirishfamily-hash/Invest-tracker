@@ -12,17 +12,24 @@ import Dashboard from "@/pages/dashboard";
 import Holdings from "@/pages/holdings";
 import Analysis from "@/pages/analysis";
 import BubbleWatchPage from "@/pages/bubble-watch";
-import News from "@/pages/news";
-import Research from "@/pages/research";
+import NewsResearch from "@/pages/news-research";
 import Accounts from "@/pages/accounts";
 import Dividends from "@/pages/dividends";
 import RiskIndicators from "@/pages/risk-indicators";
 import Assets from "@/pages/assets";
-import Planning from "@/pages/planning";
+import BillsPage from "@/pages/bills";
+import BudgetPage from "@/pages/budget";
+import GoalsPage from "@/pages/goals";
+import TransactionsPage from "@/pages/transactions";
+import CashFlowPage from "@/pages/cash-flow";
+import InsightsPage from "@/pages/insights";
+import WhatIfPage from "@/pages/what-if";
+import ExportsPage from "@/pages/exports";
 import Entities from "@/pages/entities";
 import Estate from "@/pages/estate";
 import Family from "@/pages/family";
 import AIAssistant from "@/pages/ai-assistant";
+import SettingsPage from "@/pages/settings";
 
 function Router() {
   return (
@@ -31,17 +38,26 @@ function Router() {
       <Route path="/holdings" component={Holdings} />
       <Route path="/analysis" component={Analysis} />
       <Route path="/bubble-watch" component={BubbleWatchPage} />
-      <Route path="/news" component={News} />
-      <Route path="/research" component={Research} />
+      <Route path="/news" component={NewsResearch} />
+      <Route path="/research" component={NewsResearch} />
       <Route path="/accounts" component={Accounts} />
       <Route path="/dividends" component={Dividends} />
       <Route path="/risk-indicators" component={RiskIndicators} />
       <Route path="/assets" component={Assets} />
-      <Route path="/planning" component={Planning} />
+      <Route path="/planning" component={Estate} />
+      <Route path="/budget" component={BudgetPage} />
+      <Route path="/transactions" component={TransactionsPage} />
+      <Route path="/bills" component={BillsPage} />
+      <Route path="/cash-flow" component={CashFlowPage} />
+      <Route path="/goals" component={GoalsPage} />
+      <Route path="/insights" component={InsightsPage} />
+      <Route path="/what-if" component={WhatIfPage} />
+      <Route path="/exports" component={ExportsPage} />
       <Route path="/entities" component={Entities} />
       <Route path="/estate" component={Estate} />
       <Route path="/family" component={Family} />
       <Route path="/ai-assistant" component={AIAssistant} />
+      <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
   );

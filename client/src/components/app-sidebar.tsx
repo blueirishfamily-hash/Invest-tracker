@@ -10,7 +10,31 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, PieChart, TrendingUp, AlertTriangle, Settings, Newspaper, Search, Link2, DollarSign, Gauge, Wallet, Target, Building2, Users, FileHeart, MessageCircle } from "lucide-react";
+import {
+  LayoutDashboard,
+  PieChart,
+  TrendingUp,
+  AlertTriangle,
+  Settings,
+  Newspaper,
+  Link2,
+  DollarSign,
+  Gauge,
+  Wallet,
+  Target,
+  Building2,
+  Users,
+  FileHeart,
+  MessageCircle,
+  CalendarDays,
+  Activity,
+  PiggyBank,
+  Zap,
+  FileText,
+  ReceiptText,
+  BarChart3,
+  CreditCard,
+} from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const navItems = [
@@ -20,12 +44,17 @@ const navItems = [
     icon: LayoutDashboard,
   },
   {
+    title: "Budget",
+    url: "/budget",
+    icon: CreditCard,
+  },
+  {
     title: "Assets",
     url: "/assets",
     icon: Wallet,
   },
   {
-    title: "Analysis",
+    title: "Investment Analysis",
     url: "/analysis",
     icon: PieChart,
   },
@@ -35,29 +64,24 @@ const navItems = [
     icon: AlertTriangle,
   },
   {
-    title: "News",
+    title: "News & Research",
     url: "/news",
     icon: Newspaper,
   },
   {
-    title: "Research",
-    url: "/research",
-    icon: Search,
+    title: "Goals",
+    url: "/goals",
+    icon: PiggyBank,
   },
   {
-    title: "Dividends",
-    url: "/dividends",
-    icon: DollarSign,
+    title: "What-If",
+    url: "/what-if",
+    icon: AlertTriangle,
   },
   {
-    title: "Risk Indicators",
-    url: "/risk-indicators",
-    icon: Gauge,
-  },
-  {
-    title: "Planning",
-    url: "/planning",
-    icon: Target,
+    title: "Exports",
+    url: "/exports",
+    icon: FileText,
   },
   {
     title: "Entities",
@@ -75,9 +99,14 @@ const navItems = [
     icon: Users,
   },
   {
-    title: "AI Assistant",
+    title: "Sila",
     url: "/ai-assistant",
     icon: MessageCircle,
+  },
+  {
+    title: "Settings",
+    url: "/settings",
+    icon: Settings,
   },
   {
     title: "Accounts",

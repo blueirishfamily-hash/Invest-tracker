@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign, Gauge, Calendar } from "lucide-react";
 import { SEO } from "@/components/seo";
 import type { SectorAnalysis, BreakdownAnalysis, PortfolioMetrics } from "@shared/schema";
+import { RiskIndicatorsContent } from "@/pages/risk-indicators";
+import { DividendsContent } from "@/pages/dividends";
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -133,21 +135,21 @@ export default function Analysis() {
   return (
     <div className="p-6 space-y-6" data-testid="page-analysis">
       <SEO 
-        title="Analysis" 
-        description="Deep dive into your portfolio performance with sector allocation and performance insights." 
+        title="Investment Analysis" 
+        description="Deep dive into your portfolio performance with sector allocation, performance insights, and risk metrics." 
       />
       
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">
-          Portfolio Analysis
+          Investment Analysis
         </h1>
         <p className="text-muted-foreground" data-testid="text-page-description">
-          Deep dive into your portfolio performance, allocation, and fees
+          Deep dive into your portfolio performance, allocation, fees, and risk metrics
         </p>
       </div>
 
       <Tabs defaultValue="breakdown" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-md grid-cols-4">
           <TabsTrigger value="breakdown" className="flex items-center gap-2">
             <PieChart className="h-4 w-4" />
             Breakdown
@@ -155,6 +157,14 @@ export default function Analysis() {
           <TabsTrigger value="fees" className="flex items-center gap-2">
             <DollarSign className="h-4 w-4" />
             Fees
+          </TabsTrigger>
+          <TabsTrigger value="dividends" className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            Dividends
+          </TabsTrigger>
+          <TabsTrigger value="risk" className="flex items-center gap-2">
+            <Gauge className="h-4 w-4" />
+            Risk Indicators
           </TabsTrigger>
         </TabsList>
 
@@ -479,6 +489,14 @@ export default function Analysis() {
 
         <TabsContent value="fees">
           <FeeAnalyzer />
+        </TabsContent>
+        
+        <TabsContent value="dividends">
+          <DividendsContent />
+        </TabsContent>
+        
+        <TabsContent value="risk">
+          <RiskIndicatorsContent />
         </TabsContent>
       </Tabs>
     </div>

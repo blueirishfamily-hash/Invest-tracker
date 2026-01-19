@@ -8,10 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SEO } from "@/components/seo";
 import { 
   MessageCircle, Send, Bot, User, Sparkles, 
-  Trash2, Plus, ArrowRight, TrendingUp, PieChart, DollarSign
+  Trash2, Plus, ArrowRight, TrendingUp, PieChart, DollarSign, Target, Lightbulb
 } from "lucide-react";
 import { useLocation } from "wouter";
-import type { ChatConversation, AIResponse } from "@shared/schema";
+import type { ChatConversation, AIResponse, UserPreferences } from "@shared/schema";
 
 // Suggested prompts for new users
 const suggestedPrompts = [
@@ -40,6 +40,11 @@ export default function AIAssistant() {
   // All conversations
   const { data: conversations } = useQuery<ChatConversation[]>({
     queryKey: ["/api/ai/conversations"],
+  });
+
+  // Fetch user preferences for strategy recommendations
+  const { data: preferences } = useQuery<UserPreferences>({
+    queryKey: ["/api/settings"],
   });
   
   // Send message mutation
@@ -113,7 +118,7 @@ export default function AIAssistant() {
   return (
     <div className="p-6 h-[calc(100vh-4rem)]">
       <SEO
-        title="AI Assistant"
+        title="Ask Sila"
         description="Get AI-powered insights about your portfolio"
       />
 
@@ -176,7 +181,7 @@ export default function AIAssistant() {
           <CardHeader className="pb-3 border-b">
             <CardTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5" />
-              AI Financial Assistant
+              Ask Sila
             </CardTitle>
             <CardDescription>
               Ask questions about your portfolio and get personalized insights
@@ -196,6 +201,35 @@ export default function AIAssistant() {
                     I can answer questions about your portfolio, provide insights on your holdings, 
                     and help with financial planning.
                   </p>
+                  
+                  {/* Investment Strategy Recommendations Section */}
+                  {preferences?.portfolioStrategy && (
+                    <Card className="w-full max-w-md mb-6 border-primary/20 bg-primary/5">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Target className="h-4 w-4 text-primary" />
+                          Investment Strategy Recommendations
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          Based on your {preferences.portfolioStrategy} strategy
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <Button
+                          variant="default"
+                          className="w-full"
+                          onClick={() => {
+                            const strategyPrompt = `Based on my ${preferences.portfolioStrategy} investment strategy, what specific investment recommendations and asset allocation would you suggest? Please consider my current age (${preferences.currentAge || 'not specified'}) and retirement age (${preferences.retirementAge || 'not specified'}).`;
+                            handleSuggestedPrompt(strategyPrompt);
+                          }}
+                        >
+                          <Lightbulb className="h-4 w-4 mr-2" />
+                          Get Strategy Recommendations
+                          <ArrowRight className="h-4 w-4 ml-auto" />
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
                   
                   <div className="grid gap-3 max-w-md">
                     {suggestedPrompts.map((prompt, i) => (
