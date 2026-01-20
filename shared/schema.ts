@@ -2781,15 +2781,16 @@ export const demoTransactions: Transaction[] = [
     date: new Date().toISOString(),
     name: "Target #1187",
     merchantName: "Target",
-    amount: -60,
+    amount: -85,
     direction: "debit",
-    categoryId: "cat-1",
+    categoryId: "cat-1", // Groceries
     tags: ["tag-2"],
     isPending: false,
     isSplit: true,
     splits: [
-      { id: "split-1", transactionId: "txn-1", categoryId: "cat-1", amount: -40, notes: "Groceries" },
-      { id: "split-2", transactionId: "txn-1", categoryId: "cat-5", amount: -20, notes: "Household" },
+      { id: "split-1", transactionId: "txn-1", categoryId: "cat-1", amount: -50, notes: "Groceries" },
+      { id: "split-2", transactionId: "txn-1", categoryId: "cat-groceries-cleaning", amount: -20, notes: "Cleaning Supplies" },
+      { id: "split-3", transactionId: "txn-1", categoryId: "cat-groceries-toiletries", amount: -15, notes: "Toiletries" },
     ],
     notes: "Weekly run",
     createdAt: new Date().toISOString(),
@@ -2799,11 +2800,11 @@ export const demoTransactions: Transaction[] = [
     id: "txn-2",
     accountId: "acct-1",
     date: new Date().toISOString(),
-    name: "Joe's Grill",
-    merchantName: "Joe's Grill",
-    amount: -42.5,
+    name: "Olive Garden",
+    merchantName: "Olive Garden",
+    amount: -65,
     direction: "debit",
-    categoryId: "cat-2",
+    categoryId: "cat-2", // Dining Out
     tags: [],
     isPending: false,
     isSplit: false,
@@ -2820,7 +2821,7 @@ export const demoTransactions: Transaction[] = [
     merchantName: "Acme Corp",
     amount: 4200,
     direction: "credit",
-    categoryId: "cat-4",
+    categoryId: "cat-4", // Salary
     tags: ["tag-1"],
     isPending: false,
     isSplit: false,
@@ -2829,43 +2830,106 @@ export const demoTransactions: Transaction[] = [
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
-  // Generate additional test transactions for variety
+  // Generate additional test transactions using new category structure
   ...(() => {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const transactions: Transaction[] = [];
-    const merchants = [
-      "Walmart", "Whole Foods", "Safeway", "Costco", "Amazon", "Starbucks", "McDonald's", "Subway", 
-      "Chipotle", "Pizza Hut", "Uber", "Lyft", "Shell", "Chevron", "Exxon", "Home Depot", "Lowe's",
-      "Best Buy", "Apple Store", "Target", "Macy's", "Nike", "Nordstrom", "REI", "Petco",
-      "CVS Pharmacy", "Walgreens", "7-Eleven", "Trader Joe's", "Panera Bread", "Olive Garden"
-    ];
-    const categories = ["cat-1", "cat-2", "cat-3", "cat-5"]; // Groceries, Dining Out, Rent, Utilities
-    const categoryNames = ["Groceries", "Dining Out", "Rent", "Utilities"];
     
-    // Generate ~47 more transactions (total 50)
+    // Merchants organized by category for realistic assignments
+    const merchantCategoryMap: Record<string, { merchants: string[]; categoryId: string; amountRange: [number, number] }> = {
+      // Housing
+      "cat-housing-mortgage": { merchants: ["Chase Mortgage", "Wells Fargo Mortgage", "Bank of America"], categoryId: "cat-housing-mortgage", amountRange: [800, 3000] },
+      "cat-housing-property-tax": { merchants: ["County Tax Office", "Property Tax Services"], categoryId: "cat-housing-property-tax", amountRange: [100, 800] },
+      "cat-housing-hoa": { merchants: ["HOA Management", "Community Association"], categoryId: "cat-housing-hoa", amountRange: [50, 500] },
+      "cat-housing-insurance": { merchants: ["State Farm", "Allstate", "Farmers Insurance"], categoryId: "cat-housing-insurance", amountRange: [50, 400] },
+      "cat-3": { merchants: ["Landlord", "Property Management"], categoryId: "cat-3", amountRange: [1000, 3500] }, // Rent
+      
+      // Utilities
+      "cat-utilities-electricity": { merchants: ["Duke Energy", "PG&E", "ConEd", "Electric Company"], categoryId: "cat-utilities-electricity", amountRange: [50, 300] },
+      "cat-utilities-water": { merchants: ["City Water Dept", "Water Services"], categoryId: "cat-utilities-water", amountRange: [20, 150] },
+      "cat-utilities-gas": { merchants: ["Gas Company", "Natural Gas Services"], categoryId: "cat-utilities-gas", amountRange: [30, 200] },
+      "cat-utilities-trash": { merchants: ["Waste Management", "Trash Services"], categoryId: "cat-utilities-trash", amountRange: [15, 100] },
+      
+      // Connectivity
+      "cat-connectivity-cell": { merchants: ["Verizon", "AT&T", "T-Mobile", "Sprint"], categoryId: "cat-connectivity-cell", amountRange: [30, 150] },
+      "cat-connectivity-internet": { merchants: ["Comcast", "Spectrum", "Verizon Fios", "AT&T Internet"], categoryId: "cat-connectivity-internet", amountRange: [40, 150] },
+      "cat-connectivity-streaming": { merchants: ["Netflix", "Disney+", "Hulu", "Spotify", "Apple Music", "HBO Max"], categoryId: "cat-connectivity-streaming", amountRange: [5, 20] },
+      
+      // Insurance
+      "cat-insurance-health": { merchants: ["Blue Cross", "Aetna", "United Healthcare", "Kaiser Permanente"], categoryId: "cat-insurance-health", amountRange: [100, 800] },
+      "cat-insurance-life": { merchants: ["State Farm Life", "Northwestern Mutual", "New York Life"], categoryId: "cat-insurance-life", amountRange: [20, 200] },
+      "cat-insurance-renters": { merchants: ["Lemonade", "State Farm", "Geico"], categoryId: "cat-insurance-renters", amountRange: [10, 50] },
+      
+      // Transportation
+      "cat-transportation-fuel": { merchants: ["Shell", "Chevron", "Exxon", "BP", "7-Eleven", "Speedway"], categoryId: "cat-transportation-fuel", amountRange: [20, 100] },
+      "cat-transportation-transit": { merchants: ["Metro Transit", "MTA", "BART", "City Bus"], categoryId: "cat-transportation-transit", amountRange: [2, 150] },
+      "cat-transportation-tolls": { merchants: ["EZ Pass", "FasTrak", "Toll Services"], categoryId: "cat-transportation-tolls", amountRange: [2, 50] },
+      "cat-transportation-parking": { merchants: ["Parking Services", "ParkMobile", "SpotHero"], categoryId: "cat-transportation-parking", amountRange: [5, 50] },
+      "cat-transportation-maintenance": { merchants: ["Jiffy Lube", "Meineke", "Firestone", "Auto Repair Shop"], categoryId: "cat-transportation-maintenance", amountRange: [30, 300] },
+      "cat-transportation-rideshare": { merchants: ["Uber", "Lyft"], categoryId: "cat-transportation-rideshare", amountRange: [5, 80] },
+      
+      // Groceries & Dining
+      "cat-groceries-toiletries": { merchants: ["Target", "Walmart", "CVS Pharmacy", "Walgreens"], categoryId: "cat-groceries-toiletries", amountRange: [10, 80] },
+      "cat-groceries-cleaning": { merchants: ["Target", "Walmart", "Home Depot"], categoryId: "cat-groceries-cleaning", amountRange: [5, 50] },
+      "cat-1": { merchants: ["Whole Foods", "Safeway", "Kroger", "Trader Joe's", "Costco", "Walmart Supercenter"], categoryId: "cat-1", amountRange: [20, 200] }, // Groceries
+      "cat-dining-fast-food": { merchants: ["McDonald's", "Subway", "Taco Bell", "Burger King", "Wendy's"], categoryId: "cat-dining-fast-food", amountRange: [5, 25] },
+      "cat-dining-coffee": { merchants: ["Starbucks", "Dunkin'", "Peet's Coffee", "Local Coffee Shop"], categoryId: "cat-dining-coffee", amountRange: [3, 15] },
+      "cat-dining-bars": { merchants: ["Local Bar", "Sports Bar", "Brewery"], categoryId: "cat-dining-bars", amountRange: [10, 80] },
+      "cat-2": { merchants: ["Olive Garden", "Chipotle", "Pizza Hut", "Panera Bread", "Restaurant"], categoryId: "cat-2", amountRange: [15, 100] }, // Dining Out
+      
+      // Personal Care
+      "cat-personal-haircuts": { merchants: ["Hair Salon", "Supercuts", "Great Clips", "Barber Shop"], categoryId: "cat-personal-haircuts", amountRange: [15, 100] },
+      "cat-personal-gym": { merchants: ["Planet Fitness", "24 Hour Fitness", "LA Fitness", "YMCA"], categoryId: "cat-personal-gym", amountRange: [10, 100] },
+      "cat-personal-pharmacy": { merchants: ["CVS Pharmacy", "Walgreens", "Rite Aid"], categoryId: "cat-personal-pharmacy", amountRange: [5, 100] },
+      
+      // Shopping
+      "cat-shopping-electronics": { merchants: ["Best Buy", "Apple Store", "Amazon", "Micro Center"], categoryId: "cat-shopping-electronics", amountRange: [20, 1000] },
+      "cat-shopping-decor": { merchants: ["Home Depot", "Lowe's", "IKEA", "Bed Bath & Beyond"], categoryId: "cat-shopping-decor", amountRange: [10, 300] },
+      "cat-shopping-amazon": { merchants: ["Amazon"], categoryId: "cat-shopping-amazon", amountRange: [5, 200] },
+      
+      // Clothing
+      "cat-clothing-work": { merchants: ["Macy's", "Nordstrom", "Men's Wearhouse", "Banana Republic"], categoryId: "cat-clothing-work", amountRange: [30, 300] },
+      "cat-clothing-seasonal": { merchants: ["Nike", "REI", "Old Navy", "Gap"], categoryId: "cat-clothing-seasonal", amountRange: [15, 200] },
+      "cat-clothing-shoes": { merchants: ["Foot Locker", "DSW", "Nike Store"], categoryId: "cat-clothing-shoes", amountRange: [40, 200] },
+      
+      // Entertainment
+      "cat-entertainment-movies": { merchants: ["AMC Theaters", "Regal Cinemas", "Fandango"], categoryId: "cat-entertainment-movies", amountRange: [10, 50] },
+      "cat-entertainment-concerts": { merchants: ["Ticketmaster", "Eventbrite", "Venue"], categoryId: "cat-entertainment-concerts", amountRange: [30, 300] },
+      "cat-entertainment-hobbies": { merchants: ["Barnes & Noble", "Local Bookstore", "Hobby Shop"], categoryId: "cat-entertainment-hobbies", amountRange: [5, 100] },
+      
+      // Income
+      "cat-4": { merchants: ["Acme Corp", "Payroll", "Employer", "Freelance Client"], categoryId: "cat-4", amountRange: [2000, 6000] }, // Salary
+    };
+    
+    // Get all category entries
+    const categoryEntries = Object.values(merchantCategoryMap);
+    
+    // Generate ~50 transactions total
     for (let i = 0; i < 47; i++) {
       const dayOffset = Math.floor(Math.random() * 30); // Random day in month
       const txnDate = new Date(monthStart);
       txnDate.setDate(txnDate.getDate() + dayOffset);
       
       const isIncome = i === 20 || i === 40; // 2 more income transactions
-      const merchantIndex = Math.floor(Math.random() * merchants.length);
-      const categoryIndex = Math.floor(Math.random() * categories.length);
-      const merchant = merchants[merchantIndex];
-      
-      let amount: number;
-      let categoryId: string | undefined;
-      let direction: "debit" | "credit";
+      let categoryEntry;
       
       if (isIncome) {
-        amount = Math.floor(Math.random() * 4000) + 2000; // $2000-$6000
-        direction = "credit";
-        categoryId = "cat-4"; // Salary
+        // Use income category
+        categoryEntry = merchantCategoryMap["cat-4"];
       } else {
-        amount = -(Math.floor(Math.random() * 490) + 10); // -$10 to -$500
-        direction = "debit";
-        categoryId = categories[categoryIndex];
+        // Randomly select from expense categories
+        categoryEntry = categoryEntries[Math.floor(Math.random() * categoryEntries.length)];
+      }
+      
+      const merchant = categoryEntry.merchants[Math.floor(Math.random() * categoryEntry.merchants.length)];
+      const [minAmount, maxAmount] = categoryEntry.amountRange;
+      
+      let amount: number;
+      if (isIncome) {
+        amount = Math.floor(Math.random() * (maxAmount - minAmount + 1)) + minAmount;
+      } else {
+        amount = -(Math.floor(Math.random() * (maxAmount - minAmount + 1)) + minAmount);
       }
       
       transactions.push({
@@ -2875,8 +2939,8 @@ export const demoTransactions: Transaction[] = [
         name: merchant,
         merchantName: merchant,
         amount,
-        direction,
-        categoryId,
+        direction: isIncome ? "credit" : "debit",
+        categoryId: categoryEntry.categoryId,
         tags: [],
         isPending: false,
         isSplit: false,
