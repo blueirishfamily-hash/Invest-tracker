@@ -2424,41 +2424,149 @@ export async function registerRoutes(
       const bills = await storage.getBills();
       const subscriptions = await storage.getSubscriptions();
 
+      // Calculate current calendar month boundaries
       const now = new Date();
-      const windowEnd = new Date();
-      windowEnd.setDate(windowEnd.getDate() + 30);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
       const upcomingBills = bills
         .map((bill) => {
           const nextDate = getNextDueDate(bill.dueDate, bill.frequency);
           if (!nextDate) return null;
-          if (nextDate < now || nextDate > windowEnd) return null;
+          // Only include bills due within the current calendar month
+          if (nextDate < monthStart || nextDate > monthEnd) return null;
           return { ...bill, nextDueDate: nextDate.toISOString().slice(0, 10) };
         })
         .filter(Boolean);
 
       const upcomingSubscriptions = subscriptions.filter((sub) => {
         const next = new Date(sub.nextBillingDate);
-        return next >= now && next <= windowEnd;
+        // Only include subscriptions due within the current calendar month
+        return next >= monthStart && next <= monthEnd;
       });
 
-      const transactions = await storage.getTransactions({ startDate: new Date(Date.now() - 30 * 86400000).toISOString() });
-      const expectedIncome = transactions
-        .filter((txn) => txn.direction === "credit")
-        .reduce((sum, txn) => sum + txn.amount, 0);
+      // Only get transactions from the current calendar month
+      const transactions = await storage.getTransactions({ startDate: monthStart.toISOString() });
+      const incomeTransactions = transactions.filter((txn) => {
+        // Filter to only credit transactions within current month
+        const txnDate = new Date(txn.date);
+        return txn.direction === "credit" && txnDate >= monthStart && txnDate <= monthEnd;
+      });
+      
+      // Group income by merchant/name to create income sources
+      const incomeSourcesMap = new Map<string, number>();
+      incomeTransactions.forEach((txn) => {
+        const sourceName = txn.merchantName || txn.name || "Other Income";
+        const current = incomeSourcesMap.get(sourceName) || 0;
+        incomeSourcesMap.set(sourceName, current + txn.amount);
+      });
+      
+      const incomeSources = Array.from(incomeSourcesMap.entries()).map(([name, amount], index) => ({
+        id: `income-${index}`,
+        name,
+        amount,
+      }));
+      
+      const expectedIncome = incomeSources.reduce((sum, source) => sum + source.amount, 0);
+
+      // Calculate expenses from debit transactions in current month
+      const expensesTotal = transactions
+        .filter((txn) => {
+          // Filter to only debit transactions within current month
+          const txnDate = new Date(txn.date);
+          return txn.direction === "debit" && txnDate >= monthStart && txnDate <= monthEnd;
+        })
+        .reduce((sum, txn) => sum + Math.abs(txn.amount), 0);
 
       const billsTotal = upcomingBills.reduce((sum: number, bill: any) => sum + bill.amount, 0);
       const subsTotal = upcomingSubscriptions.reduce((sum, sub) => sum + sub.amount, 0);
-      const safeToSpend = totalBalance + expectedIncome - billsTotal - subsTotal;
+      
+      // Calculate expenses by category
+      const categories = await storage.getTransactionCategories();
+      const categoryMap = new Map(categories.map(cat => [cat.id, cat]));
+      const expensesByCategoryMap = new Map<string, number>();
+      
+      const debitTransactions = transactions.filter((txn) => {
+        const txnDate = new Date(txn.date);
+        return txn.direction === "debit" && txnDate >= monthStart && txnDate <= monthEnd;
+      });
+      
+      debitTransactions.forEach((txn) => {
+        const categoryId = txn.categoryId || "uncategorized";
+        const amount = Math.abs(txn.amount);
+        expensesByCategoryMap.set(categoryId, (expensesByCategoryMap.get(categoryId) || 0) + amount);
+      });
+      
+      const expensesByCategory = Array.from(expensesByCategoryMap.entries())
+        .map(([categoryId, total]) => {
+          const category = categoryMap.get(categoryId);
+          return {
+            categoryId,
+            categoryName: category?.name || "Uncategorized",
+            total,
+            color: category?.color,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+      
+      // Calculate top vendors
+      const vendorMap = new Map<string, number>();
+      debitTransactions.forEach((txn) => {
+        const vendor = txn.merchantName || txn.name || "Unknown";
+        const amount = Math.abs(txn.amount);
+        vendorMap.set(vendor, (vendorMap.get(vendor) || 0) + amount);
+      });
+      
+      const topVendors = Array.from(vendorMap.entries())
+        .map(([merchantName, total]) => ({ merchantName, total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10); // Top 10 vendors
+      
+      // Calculate savings total (sum of monthly contributions from active sinking funds)
+      const sinkingFunds = await storage.getSinkingFunds();
+      const savingsTotal = sinkingFunds
+        .filter(fund => fund.status === "active")
+        .reduce((sum, fund) => sum + fund.monthlyContribution, 0);
+      
+      // Calculate loan payments total (sum of minimum payments from debt plans)
+      const debtPlans = await storage.getDebtPlans();
+      let loanPaymentsTotal = 0;
+      debtPlans.forEach((plan) => {
+        plan.debts.forEach((debt) => {
+          // Check if payment is due in current month
+          if (debt.dueDate) {
+            const dueDate = new Date(debt.dueDate);
+            if (dueDate >= monthStart && dueDate <= monthEnd) {
+              loanPaymentsTotal += debt.minimumPayment;
+            }
+          } else {
+            // If no due date, assume monthly payment
+            loanPaymentsTotal += debt.minimumPayment;
+          }
+        });
+      });
+      
+      const plannedSpendingTotal = billsTotal + subsTotal + loanPaymentsTotal;
+      
+      // Safe to spend only uses current month income, excludes existing account balances
+      // Includes actual expenses + planned bills + planned subscriptions + loan payments - savings contributions
+      const safeToSpend = expectedIncome - expensesTotal - plannedSpendingTotal - savingsTotal;
 
       res.json({
         totalBalance,
         expectedIncome,
+        incomeSources,
+        expensesTotal,
         upcomingBills,
         upcomingSubscriptions,
         billsTotal,
         subsTotal,
         safeToSpend,
+        expensesByCategory,
+        topVendors,
+        savingsTotal,
+        loanPaymentsTotal,
+        plannedSpendingTotal,
       });
     } catch (error: any) {
       console.error("Error calculating cash flow snapshot:", error);

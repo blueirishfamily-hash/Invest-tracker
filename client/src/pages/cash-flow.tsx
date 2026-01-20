@@ -201,7 +201,7 @@ export function CashFlowContent() {
         <Card>
           <CardHeader>
             <CardTitle>Safe to Spend</CardTitle>
-            <CardDescription>Balance after upcoming bills.</CardDescription>
+            <CardDescription>Current month income after bills and subscriptions.</CardDescription>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">
             {snapshot ? formatCurrency(snapshot.safeToSpend) : "--"}
@@ -268,7 +268,7 @@ export function CashFlowContent() {
         <Card>
           <CardHeader>
             <CardTitle>Upcoming Bills</CardTitle>
-            <CardDescription>Next 30 days.</CardDescription>
+            <CardDescription>Current month.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {(snapshot?.upcomingBills || []).map((bill: any) => (
@@ -288,7 +288,7 @@ export function CashFlowContent() {
         <Card>
           <CardHeader>
             <CardTitle>Upcoming Subscriptions</CardTitle>
-            <CardDescription>Next 30 days.</CardDescription>
+            <CardDescription>Current month.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {(snapshot?.upcomingSubscriptions || []).map((sub: any) => (
