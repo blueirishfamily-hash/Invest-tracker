@@ -90,6 +90,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
   const subsTotal = data.subsTotal;
   const loanPaymentsTotal = data.loanPaymentsTotal || 0;
   const savings = data.savingsTotal || 0;
+  const safeToSpend = data.safeToSpend || 0;
   const expensesByCategory = data.expensesByCategory || [];
   const bills = data.upcomingBills || [];
   const subscriptions = data.upcomingSubscriptions || [];
@@ -300,7 +301,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
   const col2Y = col1Y;
   const col2Height = col1TotalHeight; // Total Income height = sum of income sources
   
-  // Column 3: Budget - height proportional to total outflow amount
+  // Column 3: Budget and Safe to Spend - vertically aligned
   const col3X = col2X + nodeWidth + dynamicNodeGap;
   const col3Y = col2Y;
   
@@ -308,6 +309,20 @@ function SankeyChart({ data }: { data: CashFlowData }) {
   const col3Height = totalOutflow > 0 
     ? scaleFactor(totalOutflow, maxAmount) 
     : minBandHeight;
+  
+  // Calculate Safe to Spend height - proportional to income
+  const col3SafeToSpendHeight = safeToSpend > 0 
+    ? scaleFactor(safeToSpend, maxAmount)
+    : 0;
+  
+  // Gap between Budget and Safe to Spend nodes
+  const budgetToSafeToSpendGap = 8;
+  
+  // Position Safe to Spend node vertically aligned with Budget
+  // Place it directly below Budget if both exist
+  const col3SafeToSpendY = col3SafeToSpendHeight > 0
+    ? col3Y + col3Height + budgetToSafeToSpendGap
+    : col3Y;
   
   // Column 4: Main Categories
   const col4X = col3X + nodeWidth + dynamicNodeGap;
@@ -414,7 +429,8 @@ function SankeyChart({ data }: { data: CashFlowData }) {
     ...subcategoryNodes.map(n => n.y + n.height),
     col1Y + col1TotalHeight,
     col2Y + col2Height,
-    col3Y + col3Height
+    col3Y + col3Height,
+    col3SafeToSpendHeight > 0 ? col3SafeToSpendY + col3SafeToSpendHeight : 0
   );
   // Calculate actual height needed (add padding)
   const calculatedHeight = maxY + 15; // Reduced bottom padding
@@ -503,11 +519,31 @@ function SankeyChart({ data }: { data: CashFlowData }) {
     );
   });
   
-  // Flow 2: Total Income → Budget
+  // Flow 2: Total Income → Budget (proportional split)
+  // Calculate the proportion of income going to Budget vs Safe to Spend
+  const totalAllocated = totalOutflow + safeToSpend;
+  const budgetProportion = totalAllocated > 0 ? totalOutflow / totalAllocated : 1;
+  const safeToSpendProportion = totalAllocated > 0 ? safeToSpend / totalAllocated : 0;
+  
+  // Calculate flow positions on Total Income node
+  let cumulativeIncomeOutflow = 0;
+  const budgetFlowHeight = col2Height * budgetProportion;
+  const budgetFlowY = col2Y + cumulativeIncomeOutflow * col2Height;
+  cumulativeIncomeOutflow += budgetProportion;
+  
+  const safeToSpendFlowHeight = col2Height * safeToSpendProportion;
+  const safeToSpendFlowY = col2Y + cumulativeIncomeOutflow * col2Height;
+  
   const totalIncomeToBudgetPath = createSankeyPath(
-    col2X, col2Y, col2Height,
+    col2X, budgetFlowY, budgetFlowHeight,
     col3X, col3Y, col3Height
   );
+  
+  // Flow 2b: Total Income → Safe to Spend (if exists)
+  const totalIncomeToSafeToSpendPath = col3SafeToSpendHeight > 0 ? createSankeyPath(
+    col2X, safeToSpendFlowY, safeToSpendFlowHeight,
+    col3X, col3SafeToSpendY, col3SafeToSpendHeight
+  ) : null;
   
   // Flow 3: Budget → Main Categories
   let cumulativeOutflowProportion = 0;
@@ -603,6 +639,16 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           opacity="0.8"
           filter="url(#shadow)"
         />
+        
+        {/* Flow 2b: Total Income → Safe to Spend */}
+        {totalIncomeToSafeToSpendPath && (
+          <path
+            d={totalIncomeToSafeToSpendPath}
+            fill="hsl(var(--chart-3))"
+            opacity="0.8"
+            filter="url(#shadow)"
+          />
+        )}
         
         {/* Flow 3: Budget → Main Categories */}
         {budgetToCategoryPaths.map((pathData, index) => (
@@ -725,6 +771,42 @@ function SankeyChart({ data }: { data: CashFlowData }) {
         >
           {formatCurrency(totalOutflow)}
         </text>
+        
+        {/* Column 3: Safe to Spend (vertically aligned with Budget) */}
+        {col3SafeToSpendHeight > 0 && (
+          <>
+            <rect
+              x={col3X}
+              y={col3SafeToSpendY}
+              width={nodeWidth}
+              height={col3SafeToSpendHeight}
+              fill="hsl(var(--chart-3))"
+              rx="4"
+              filter="url(#shadow)"
+            />
+            <text
+              x={col3X - 5}
+              y={col3SafeToSpendY + col3SafeToSpendHeight / 2 - 5}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fill="hsl(var(--foreground))"
+              fontSize="10"
+              fontWeight="bold"
+            >
+              Safe to Spend
+            </text>
+            <text
+              x={col3X - 5}
+              y={col3SafeToSpendY + col3SafeToSpendHeight / 2 + 6}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fill="hsl(var(--foreground))"
+              fontSize="8"
+            >
+              {formatCurrency(safeToSpend)}
+            </text>
+          </>
+        )}
         
         {/* Column 4: Main Category Nodes */}
         {categoryNodes.map((node) => {
