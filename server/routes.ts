@@ -2497,7 +2497,8 @@ export async function registerRoutes(
         expensesByCategoryMap.set(categoryId, (expensesByCategoryMap.get(categoryId) || 0) + amount);
       });
       
-      const expensesByCategory = Array.from(expensesByCategoryMap.entries())
+      // First, build the basic expensesByCategory from transactions
+      let expensesByCategory = Array.from(expensesByCategoryMap.entries())
         .map(([categoryId, total]) => {
           const category = categoryMap.get(categoryId);
           return {
@@ -2505,9 +2506,38 @@ export async function registerRoutes(
             categoryName: category?.name || "Uncategorized",
             total,
             color: category?.color,
+            parentId: category?.parentId,
           };
-        })
-        .sort((a, b) => b.total - a.total);
+        });
+      
+      // Now, ensure parent categories are included even if they have 0 transactions
+      // This allows subcategories to be properly grouped in the frontend
+      const parentCategoryIds = new Set<string>();
+      expensesByCategory.forEach(cat => {
+        if (cat.parentId) {
+          parentCategoryIds.add(cat.parentId);
+        }
+      });
+      
+      // Add parent categories with 0 total if they're not already present
+      parentCategoryIds.forEach(parentId => {
+        const exists = expensesByCategory.some(cat => cat.categoryId === parentId);
+        if (!exists) {
+          const parentCategory = categoryMap.get(parentId);
+          if (parentCategory) {
+            expensesByCategory.push({
+              categoryId: parentCategory.id,
+              categoryName: parentCategory.name,
+              total: 0, // Parent has no direct transactions
+              color: parentCategory.color,
+              parentId: parentCategory.parentId,
+            });
+          }
+        }
+      });
+      
+      // Sort by total (descending)
+      expensesByCategory.sort((a, b) => b.total - a.total);
       
       // Calculate top vendors
       const vendorMap = new Map<string, number>();

@@ -1,3 +1,4 @@
+import { useRef, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, ResponsiveContainer, Legend, LabelList } from "recharts";
@@ -35,6 +36,7 @@ interface ExpenseCategory {
   categoryName: string;
   total: number;
   color?: string;
+  parentId?: string;
 }
 
 interface CashFlowData {
@@ -60,31 +62,40 @@ interface CashFlowChartProps {
   isLoading?: boolean;
 }
 
-// Sankey diagram following reference format: Income Sources → Budget Hub → Main Categories → Subcategories (if applicable)
+// Sankey diagram: Income Sources → Total Income → Budget → Main Categories → Subcategories
 function SankeyChart({ data }: { data: CashFlowData }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(1200);
+  
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.offsetWidth;
+        if (width > 0) {
+          setContainerWidth(width);
+        }
+      }
+    };
+    // Use requestAnimationFrame to ensure DOM is fully rendered
+    requestAnimationFrame(() => {
+      updateWidth();
+    });
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, [data]);
+
   const income = data.expectedIncome;
   const expenses = data.expensesTotal || 0;
   const billsTotal = data.billsTotal;
   const subsTotal = data.subsTotal;
   const loanPaymentsTotal = data.loanPaymentsTotal || 0;
-  const savings = data.savingsTotal || 0; // Use savingsTotal (monthly contributions) instead of safeToSpend
+  const savings = data.savingsTotal || 0;
   const expensesByCategory = data.expensesByCategory || [];
-  
-  // Get category colors map for matching bar chart colors
-  const categoryColorMap = new Map(expensesByCategory.map(cat => [cat.categoryId, cat.color]));
-  
-  // Create expense category breakdowns
-  const expenseCategories = expensesByCategory.map(cat => ({
-    id: `expense-${cat.categoryId}`,
-    name: cat.categoryName,
-    amount: cat.total,
-    categoryId: cat.categoryId,
-  }));
-  
-  const totalOutflow = expenses + billsTotal + subsTotal + loanPaymentsTotal + savings;
-  const maxValue = Math.max(income, totalOutflow);
+  const bills = data.upcomingBills || [];
+  const subscriptions = data.upcomingSubscriptions || [];
+  const incomeSourcesData = data.incomeSources || [];
 
-  if (maxValue === 0 || income === 0) {
+  if (income === 0) {
     return (
       <div className="flex items-center justify-center h-[400px] text-muted-foreground">
         No data available
@@ -92,30 +103,139 @@ function SankeyChart({ data }: { data: CashFlowData }) {
     );
   }
 
-  const bills = data.upcomingBills || [];
-  const subscriptions = data.upcomingSubscriptions || [];
+  // Filter zero-value income sources
+  let validIncomeSources = incomeSourcesData.filter(s => s.amount > 0);
+  if (validIncomeSources.length === 0) {
+    validIncomeSources = [{ id: 'income-0', name: 'Income', amount: income }];
+  }
+
+  // Build category map for grouping and color lookup
+  const categoryMap = new Map(expensesByCategory.map(cat => [cat.categoryId, cat]));
   
-  // Replace employer names with single "Income" source
-  const incomeSources = [{ id: 'income-0', name: 'Income', amount: income }];
+  // Group expense categories: subcategories under parent main categories
+  const expenseMainCategoryMap = new Map<string, { categoryId: string; categoryName: string; total: number; color?: string; subcategories: Array<{ id: string; name: string; amount: number; categoryId: string }> }>();
   
-  // Main categories flowing from center hub (column 3)
-  // Group expenses by category for better visualization
-  const expenseCategoryTotal = expensesByCategory.reduce((sum, cat) => sum + cat.total, 0);
-  const mainCategories = [
-    ...(expenseCategoryTotal > 0 ? [{ 
-      id: 'expenses', 
-      name: 'Expenses', 
-      amount: expenseCategoryTotal, 
-      type: 'expense' as const, 
-      hasSubcategories: expenseCategories.length > 0,
-      subcategories: expenseCategories.length > 0 ? expenseCategories : undefined,
-      categoryId: undefined,
-    }] : []),
-    ...(billsTotal > 0 ? [{ id: 'bills', name: 'Bills', amount: billsTotal, type: 'bill' as const, hasSubcategories: true, subcategories: bills }] : []),
-    ...(subsTotal > 0 ? [{ id: 'subscriptions', name: 'Subscriptions', amount: subsTotal, type: 'subscription' as const, hasSubcategories: true, subcategories: subscriptions }] : []),
-    ...(loanPaymentsTotal > 0 ? [{ id: 'loan-payments', name: 'Loan Payments', amount: loanPaymentsTotal, type: 'loan' as const, hasSubcategories: false }] : []),
-    ...(savings > 0 ? [{ id: 'savings', name: 'Savings', amount: savings, type: 'savings' as const, hasSubcategories: false }] : []),
-  ].filter(cat => cat.amount > 0);
+  expensesByCategory.forEach((cat) => {
+    if (cat.total <= 0) return; // Filter zero-value categories
+    
+    if (cat.parentId) {
+      // This is a subcategory - add to parent
+      const parent = categoryMap.get(cat.parentId);
+      if (parent) {
+        const existing = expenseMainCategoryMap.get(cat.parentId);
+        if (existing) {
+          existing.total += cat.total;
+          existing.subcategories.push({
+            id: `expense-${cat.categoryId}`,
+            name: cat.categoryName,
+            amount: cat.total,
+            categoryId: cat.categoryId,
+          });
+        } else {
+          expenseMainCategoryMap.set(cat.parentId, {
+            categoryId: parent.categoryId,
+            categoryName: parent.categoryName,
+            total: cat.total,
+            color: parent.color || cat.color,
+            subcategories: [{
+              id: `expense-${cat.categoryId}`,
+              name: cat.categoryName,
+              amount: cat.total,
+              categoryId: cat.categoryId,
+            }],
+          });
+        }
+      }
+    } else {
+      // This is a main category
+      const existing = expenseMainCategoryMap.get(cat.categoryId);
+      if (existing) {
+        existing.total += cat.total;
+      } else {
+        expenseMainCategoryMap.set(cat.categoryId, {
+          categoryId: cat.categoryId,
+          categoryName: cat.categoryName,
+          total: cat.total,
+          color: cat.color,
+          subcategories: [],
+        });
+      }
+    }
+  });
+
+  // Get color function matching horizontal bar chart
+  const getCategoryColor = (categoryId: string, defaultColor?: string) => {
+    const category = expensesByCategory.find(c => c.categoryId === categoryId);
+    if (category?.color) return category.color;
+    if (defaultColor) return defaultColor;
+    // Fallback to same palette as horizontal bar chart
+    return "hsl(var(--destructive))";
+  };
+  
+  // Build main categories array (filter zero-value)
+  const mainCategories: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    type: 'expense' | 'bill' | 'subscription' | 'loan' | 'savings';
+    hasSubcategories: boolean;
+    subcategories?: any[];
+    categoryId?: string;
+  }> = [];
+
+  // Add expense main categories
+  expenseMainCategoryMap.forEach((cat) => {
+    if (cat.total > 0) {
+      mainCategories.push({
+        id: cat.categoryId,
+        name: cat.categoryName,
+        amount: cat.total,
+        type: 'expense',
+        hasSubcategories: cat.subcategories.length > 0,
+        subcategories: cat.subcategories.length > 0 ? cat.subcategories : undefined,
+        categoryId: cat.categoryId,
+      });
+    }
+  });
+
+  // Add subscriptions (with subcategories if any)
+  if (subsTotal > 0) {
+    const validSubscriptions = subscriptions.filter((s: any) => s.amount > 0);
+    mainCategories.push({
+      id: 'subscriptions',
+      name: 'Subscriptions',
+      amount: subsTotal,
+      type: 'subscription',
+      hasSubcategories: validSubscriptions.length > 0,
+      subcategories: validSubscriptions.length > 0 ? validSubscriptions.map((s: any) => ({
+        id: s.id || `sub-${s.name}`,
+        name: s.name,
+        amount: s.amount,
+      })) : undefined,
+    });
+  }
+
+  // Add savings (no subcategories)
+  if (savings > 0) {
+    mainCategories.push({
+      id: 'savings',
+      name: 'Savings',
+      amount: savings,
+      type: 'savings',
+      hasSubcategories: false,
+    });
+  }
+
+  // Add loan payments (no subcategories)
+  if (loanPaymentsTotal > 0) {
+    mainCategories.push({
+      id: 'loan-payments',
+      name: 'Loan Payments',
+      amount: loanPaymentsTotal,
+      type: 'loan',
+      hasSubcategories: false,
+    });
+  }
 
   if (mainCategories.length === 0) {
     return (
@@ -124,240 +244,232 @@ function SankeyChart({ data }: { data: CashFlowData }) {
       </div>
     );
   }
+
+  // Calculate total outflow for Budget height
+  const totalOutflow = mainCategories.reduce((sum, cat) => sum + cat.amount, 0);
   
-  // Calculate dimensions - 4 columns: Income → Hub → Categories → Subcategories
+  // Calculate dynamic card dimensions based on content
+  // Start with base height and calculate actual needed height
+  const baseCardHeight = 500; // Increased base height for Sankey
+  const cardPadding = 20;
+  const maxDiagramHeight = baseCardHeight - cardPadding * 2; // ~460px
+  
+  // SVG dimensions - compact, layered layout to maximize space usage
+  const nodeWidth = 85;
+  const minBandHeight = 10;
+  
+  // Calculate proportional scaling factor - reduced for better vertical fit
   const maxAmount = Math.max(income, totalOutflow);
-  
-  // Count all nodes for height calculation
-  const allSubcategories: Array<{ id: string; name: string; amount: number; parentId: string }> = [];
-  mainCategories.forEach(cat => {
-    if (cat.hasSubcategories && 'subcategories' in cat) {
-      cat.subcategories.forEach((sub: any) => {
-        allSubcategories.push({
-          id: sub.id,
-          name: sub.name,
-          amount: sub.amount,
-          parentId: cat.id
-        });
-      });
-    }
-  });
-  
-  // SVG dimensions
-  const nodeWidth = 100;
-  const nodeGap = 150;
-  const minBandHeight = 15;
-  const totalNodesHeight = Math.max(mainCategories.length * 80, allSubcategories.length * 40 + 100);
-  const height = Math.max(600, totalNodesHeight + 100);
-  const width = 1200; // Wider to accommodate 4 columns
-  
-  // Calculate node positions and heights - scale based on max amount for consistent proportions
-  const scale = (value: number) => {
-    if (maxAmount === 0) return minBandHeight;
-    return Math.max((value / maxAmount) * (height - 150), minBandHeight);
+  const scaleFactor = (value: number, total: number) => {
+    if (total === 0) return minBandHeight;
+    // Reduced multiplier to ensure content fits within height constraint
+    return Math.max((value / total) * maxDiagramHeight * 0.55, minBandHeight);
   };
   
-  // Column 1: Income Sources (left) - multiple sources flowing into Budget hub
-  const col1X = 50;
-  const col1Y = 100;
+  // Check if we'll have subcategories (need to know this for column calculation)
+  const willHaveSubcategories = mainCategories.some(cat => cat.hasSubcategories && cat.subcategories && cat.subcategories.length > 0);
   
-  // Calculate positions for income source nodes
+  // Calculate node positions based on container width
+  const numColumns = willHaveSubcategories ? 5 : 4;
+  const totalAvailableWidth = containerWidth - 20; // Leave 10px padding on each side
+  const totalGapsNeeded = numColumns - 1;
+  const totalNodeWidth = nodeWidth * numColumns;
+  const availableSpaceForGaps = totalAvailableWidth - totalNodeWidth - 10; // 10px total padding
+  const dynamicNodeGap = Math.max(60, availableSpaceForGaps / totalGapsNeeded);
+  
+  // Position columns evenly across container
+  const col1X = 10;
+  const col1Y = 10;
+  
+  // Position income source nodes (Column 1)
   let currentCol1Y = col1Y;
-  const incomeSourceNodes = incomeSources.map((source) => {
-    const nodeHeight = Math.max(scale(source.amount), minBandHeight);
+  const incomeSourceNodes = validIncomeSources.map((source) => {
+    const nodeHeight = scaleFactor(source.amount, income);
     const node = {
       ...source,
       y: currentCol1Y,
       height: nodeHeight,
     };
-    currentCol1Y += nodeHeight + 5; // Gap between income sources
+        currentCol1Y += nodeHeight + 1;
     return node;
   });
-  const col1TotalHeight = currentCol1Y - col1Y - 5; // Total height of all income sources
+  const col1TotalHeight = currentCol1Y - col1Y - 2;
   
-  // Column 2: Budget Hub (center-left) - all income flows converge here
-  const col2X = col1X + nodeWidth + nodeGap;
+  // Column 2: Total Income
+  const col2X = col1X + nodeWidth + dynamicNodeGap;
   const col2Y = col1Y;
-  const col2Height = Math.max(col1TotalHeight, scale(income)); // Hub height matches total income
+  const col2Height = col1TotalHeight; // Total Income height = sum of income sources
   
-  // Column 3: Main Categories (center-right)
-  const col3X = col2X + nodeWidth + nodeGap;
+  // Column 3: Budget - height proportional to total outflow amount
+  const col3X = col2X + nodeWidth + dynamicNodeGap;
   const col3Y = col2Y;
   
-  // Column 4: Subcategories (right)
-  const col4X = col3X + nodeWidth + nodeGap;
+  // Calculate Budget height based on total outflow proportion
+  const col3Height = totalOutflow > 0 
+    ? scaleFactor(totalOutflow, maxAmount) 
+    : minBandHeight;
   
-  // Calculate subcategory positions first, then align categories
-  let currentCol4Y = col3Y;
-  const subcategoryNodes: Array<{ id: string; name: string; amount: number; y: number; height: number; parentId: string }> = [];
-  const categoryNodes: Array<{ id: string; name: string; amount: number; type: string; y: number; height: number; hasSubcategories: boolean; subcategories?: any[] }> = [];
+  // Column 4: Main Categories
+  const col4X = col3X + nodeWidth + dynamicNodeGap;
+  const col4Y = col3Y;
   
-  // Process each main category to determine positions
+  // Column 5: Subcategories
+  const col5X = col4X + nodeWidth + dynamicNodeGap;
+  
+  // Position main categories (Column 4) and their subcategories (Column 5)
+  // Categories and subcategories should be proportional to Budget node size
+  let currentCol4Y = col4Y;
+  const categoryNodes: Array<{ id: string; name: string; amount: number; type: string; y: number; height: number; hasSubcategories: boolean; subcategories?: any[]; categoryId?: string }> = [];
+  const subcategoryNodes: Array<{ id: string; name: string; amount: number; y: number; height: number; parentId: string; categoryId?: string }> = [];
+  
   mainCategories.forEach((cat) => {
-    if (cat.hasSubcategories && 'subcategories' in cat && cat.subcategories && cat.subcategories.length > 0) {
-      // Categories with subcategories: align category node to match subcategory total height
-      const categoryStartY = currentCol4Y;
+    const categoryStartY = currentCol4Y;
+    
+    // Calculate category height proportional to Budget node size
+    const categoryHeight = totalOutflow > 0 
+      ? (cat.amount / totalOutflow) * col3Height
+      : minBandHeight;
+    
+    if (cat.hasSubcategories && cat.subcategories && cat.subcategories.length > 0) {
+      // Category has subcategories: calculate total height from subcategories
+      // Subcategories should be proportional to their parent category
       let categoryTotalHeight = 0;
+      const validSubs = cat.subcategories.filter((s: any) => s.amount > 0);
       
-      cat.subcategories.forEach((sub: any) => {
-        const subHeight = Math.max(scale(sub.amount), minBandHeight);
+      validSubs.forEach((sub: any) => {
+        // Subcategory height proportional to category height
+        const subHeight = cat.amount > 0 
+          ? (sub.amount / cat.amount) * categoryHeight
+          : minBandHeight;
         subcategoryNodes.push({
           id: sub.id,
           name: sub.name,
           amount: sub.amount,
           y: currentCol4Y,
           height: subHeight,
-          parentId: cat.id
+          parentId: cat.id,
+          categoryId: sub.categoryId,
         });
-        currentCol4Y += subHeight + 2;
-        categoryTotalHeight += subHeight + 2;
+        currentCol4Y += subHeight + 0.5;
+        categoryTotalHeight += subHeight + 0.5;
       });
-      categoryTotalHeight -= 2; // Remove last gap
-      currentCol4Y += 3; // Gap after category group
+      categoryTotalHeight -= 0.5; // Remove last gap
+      currentCol4Y += 1; // Gap after category group
       
-      // Create category node aligned with subcategories
+      // Use the actual subcategory total height (should match categoryHeight proportionally)
       categoryNodes.push({
         ...cat,
         y: categoryStartY,
-        height: Math.max(categoryTotalHeight, scale(cat.amount)),
+        height: Math.max(categoryTotalHeight, categoryHeight),
       });
     } else {
-      // Categories WITHOUT subcategories: do NOT create nodes in Column 4
-      // They will be positioned in Column 3 only and terminate there
-      // Position will be calculated after categories with subcategories
+      // Category without subcategories - use proportional height directly
+      categoryNodes.push({
+        ...cat,
+        y: currentCol4Y,
+        height: categoryHeight,
+      });
+      currentCol4Y += categoryHeight + 2; // Gap between categories
     }
   });
   
-  // Now add categories WITHOUT subcategories to categoryNodes array
-  // Position them sequentially after categories with subcategories
-  let currentCol3YForTerminals = col3Y;
-  mainCategories.forEach((cat) => {
-    if (!cat.hasSubcategories || !('subcategories' in cat) || !cat.subcategories || cat.subcategories.length === 0) {
-      // This category doesn't have subcategories - position it in Column 3 only
-      // Check if it's already in categoryNodes (it shouldn't be)
-      const existing = categoryNodes.find(n => n.id === cat.id);
-      if (!existing) {
-        // Find the highest Y position already used
-        const maxUsedY = categoryNodes.length > 0 
-          ? Math.max(...categoryNodes.map(n => n.y + n.height))
-          : col3Y;
-        currentCol3YForTerminals = Math.max(currentCol3YForTerminals, maxUsedY);
-        
-        const nodeHeight = Math.max(scale(cat.amount), minBandHeight);
-        categoryNodes.push({
-          ...cat,
-          y: currentCol3YForTerminals,
-          height: nodeHeight,
-        });
-        currentCol3YForTerminals += nodeHeight + 5; // Gap between categories
-      }
-    }
-  });
+  // Budget height is already calculated proportionally above
   
-  // Sort categoryNodes by Y position to ensure proper order
-  categoryNodes.sort((a, b) => a.y - b.y);
+  // Calculate total height needed - ensure it fits in card
+  const maxY = Math.max(
+    currentCol4Y,
+    ...subcategoryNodes.map(n => n.y + n.height),
+    col1Y + col1TotalHeight,
+    col2Y + col2Height,
+    col3Y + col3Height
+  );
+  // Calculate actual height needed (add padding)
+  const calculatedHeight = maxY + 15; // Reduced bottom padding
+  const actualHeight = calculatedHeight;
   
-  // Helper to create curved Sankey path
+  // Calculate dynamic card height to fit content (add padding)
+  const neededCardHeight = Math.max(baseCardHeight, actualHeight + cardPadding * 2);
+  
+  // Use full container width for viewBox to maximize horizontal space
+  const actualWidth = containerWidth;
+  
+  // Helper to create curved Sankey path with smooth curves that create visual space
   const createSankeyPath = (sourceX: number, sourceY: number, sourceHeight: number, 
                             targetX: number, targetY: number, targetHeight: number) => {
-    const curveIntensity = 50;
+    // Calculate distance for dynamic curve intensity
+    const distance = targetX - (sourceX + nodeWidth);
+    
+    // Dynamic curve based on distance - larger gaps need more curve
+    // Minimum curve of 40px, maximum of 60px, scaled by distance
+    const curveIntensity = Math.max(40, Math.min(distance * 0.45, 60));
+    
+    // Control points positioned for smooth curves that create visual space
+    const sourceControlX = sourceX + nodeWidth + curveIntensity * 0.85;
+    const targetControlX = targetX - curveIntensity * 0.85;
+    
+    // Smooth cubic bezier curves
     return `
       M ${sourceX + nodeWidth} ${sourceY}
-      C ${sourceX + nodeWidth + curveIntensity} ${sourceY},
-        ${targetX - curveIntensity} ${targetY},
+      C ${sourceControlX} ${sourceY},
+        ${targetControlX} ${targetY},
         ${targetX} ${targetY}
       L ${targetX} ${targetY + targetHeight}
-      C ${targetX - curveIntensity} ${targetY + targetHeight},
-        ${sourceX + nodeWidth + curveIntensity} ${sourceY + sourceHeight},
+      C ${targetControlX} ${targetY + targetHeight},
+        ${sourceControlX} ${sourceY + sourceHeight},
         ${sourceX + nodeWidth} ${sourceY + sourceHeight}
       Z
     `;
   };
   
-  // Flow 1: Income Sources → Budget Hub (multiple income sources flow into hub)
+  // Flow 1: Income Sources → Total Income
   let cumulativeIncomeProportion = 0;
-  const incomeToHubPaths = incomeSourceNodes.map((source) => {
+  const incomeToTotalIncomePaths = incomeSourceNodes.map((source) => {
     const proportion = income > 0 ? source.amount / income : 0;
-    const flowSourceY = col2Y + (cumulativeIncomeProportion * col2Height);
-    const flowSourceHeight = col2Height * proportion;
+    const flowTargetY = col2Y + (cumulativeIncomeProportion * col2Height);
+    const flowTargetHeight = col2Height * proportion;
     cumulativeIncomeProportion += proportion;
     
-    const path = createSankeyPath(
-      col1X,
-      source.y,
-      source.height,
-      col2X,
-      flowSourceY,
-      flowSourceHeight
+    return createSankeyPath(
+      col1X, source.y, source.height,
+      col2X, flowTargetY, flowTargetHeight
     );
-    
-    return path;
   });
   
-  // Helper to get category color - match bar chart colors
-  const getCategoryColor = (node: any, index: number) => {
-    // If node has categoryId and we have a color for it, use that
-    if (node.categoryId && categoryColorMap.has(node.categoryId)) {
-      return categoryColorMap.get(node.categoryId)!;
-    }
-    // If node type is expense and has subcategories, use default expense color
-    if (node.type === 'expense') {
-      return 'hsl(220, 70%, 55%)'; // Blue for expenses
-    }
-    // Use type-based colors for bills, subscriptions, loans, savings
-    if (node.type === 'bill') {
-      return 'hsl(0, 70%, 55%)'; // Red for bills
-    }
-    if (node.type === 'subscription') {
-      return 'hsl(280, 70%, 55%)'; // Purple for subscriptions
-    }
-    if (node.type === 'loan') {
-      return 'hsl(340, 70%, 55%)'; // Pink for loan payments
-    }
-    if (node.type === 'savings') {
-      return 'hsl(142, 70%, 55%)'; // Green for savings
-    }
-    // Fallback to color palette
-    const colors = [
-      'hsl(0, 70%, 55%)',
-      'hsl(25, 85%, 55%)',
-      'hsl(45, 85%, 55%)',
-      'hsl(220, 70%, 55%)',
-      'hsl(280, 70%, 55%)',
-      'hsl(340, 70%, 55%)',
-      'hsl(160, 60%, 55%)',
-      'hsl(200, 70%, 55%)',
-    ];
-    return colors[index % colors.length];
-  };
+  // Flow 2: Total Income → Budget
+  const totalIncomeToBudgetPath = createSankeyPath(
+    col2X, col2Y, col2Height,
+    col3X, col3Y, col3Height
+  );
   
-  // Flow 2: Budget Hub → Main Categories
-  let cumulativeProportion = 0;
-  const hubToCategoryPaths = categoryNodes.map((node, index) => {
-    const proportion = income > 0 ? node.amount / income : 0;
-    const flowSourceY = col2Y + (cumulativeProportion * col2Height);
-    const flowSourceHeight = col2Height * proportion;
-    cumulativeProportion += proportion;
+  // Flow 3: Budget → Main Categories
+  let cumulativeOutflowProportion = 0;
+  const budgetToCategoryPaths = categoryNodes.map((node) => {
+    const proportion = totalOutflow > 0 ? node.amount / totalOutflow : 0;
+    const flowSourceY = col3Y + (cumulativeOutflowProportion * col3Height);
+    const flowSourceHeight = col3Height * proportion;
+    cumulativeOutflowProportion += proportion;
     
-    const path = createSankeyPath(
-      col2X,
-      flowSourceY,
-      flowSourceHeight,
-      col3X,
-      node.y,
-      node.height
-    );
+    const color = node.categoryId ? getCategoryColor(node.categoryId, undefined) : 
+                  node.type === 'subscription' ? 'hsl(280, 70%, 55%)' :
+                  node.type === 'savings' ? 'hsl(142, 70%, 55%)' :
+                  node.type === 'loan' ? 'hsl(340, 70%, 55%)' :
+                  'hsl(var(--destructive))';
     
-    const color = getCategoryColor(node, index);
-    
-    return { path, color, categoryId: node.id };
+    return {
+      path: createSankeyPath(
+        col3X, flowSourceY, flowSourceHeight,
+        col4X, node.y, node.height
+      ),
+      color,
+      categoryId: node.id,
+    };
   });
   
-  // Flow 3: Main Categories → Subcategories (for categories with subcategories)
+  // Flow 4: Main Categories → Subcategories
   const categoryToSubcategoryPaths: Array<{ path: string; color: string }> = [];
   
   categoryNodes.forEach((cat) => {
-    if (cat.hasSubcategories && 'subcategories' in cat) {
+    if (cat.hasSubcategories) {
       const categorySubs = subcategoryNodes.filter(sub => sub.parentId === cat.id);
       if (categorySubs.length > 0) {
         let cumulativeSubProportion = 0;
@@ -367,27 +479,30 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           const flowSourceHeight = cat.height * subProportion;
           cumulativeSubProportion += subProportion;
           
-          const path = createSankeyPath(
-            col3X,
-            flowSourceY,
-            flowSourceHeight,
-            col4X,
-            sub.y,
-            sub.height
-          );
+          // Use parent category color for subcategories
+          const parentPath = budgetToCategoryPaths.find(p => p.categoryId === cat.id);
+          const color = parentPath?.color || getCategoryColor(cat.categoryId || '', undefined);
           
-          const categoryPath = hubToCategoryPaths.find(p => p.categoryId === cat.id);
-          const color = categoryPath?.color || 'hsl(var(--destructive))';
-          categoryToSubcategoryPaths.push({ path, color });
+          categoryToSubcategoryPaths.push({
+            path: createSankeyPath(
+              col4X, flowSourceY, flowSourceHeight,
+              col5X, sub.y, sub.height
+            ),
+            color,
+          });
         });
       }
     }
-    // Categories WITHOUT subcategories do NOT flow to Column 4 - they terminate in Column 3
   });
 
   return (
-    <div className="h-[600px] overflow-auto p-4">
-      <svg width={width} height={height} className="w-full">
+    <div ref={containerRef} className="w-full overflow-hidden" style={{ height: `${neededCardHeight}px` }}>
+      <svg 
+        width="100%" 
+        height="100%"
+        viewBox={`0 0 ${actualWidth} ${actualHeight}`}
+        preserveAspectRatio="xMinYMid meet"
+      >
         <defs>
           <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
@@ -402,10 +517,10 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           </filter>
         </defs>
         
-        {/* Flow 1: Income Sources → Budget Hub (multiple flows) */}
-        {incomeToHubPaths.map((path, index) => (
+        {/* Flow 1: Income Sources → Total Income */}
+        {incomeToTotalIncomePaths.map((path, index) => (
           <path
-            key={`income-to-hub-${index}`}
+            key={`income-to-total-${index}`}
             d={path}
             fill="hsl(var(--chart-1))"
             opacity="0.8"
@@ -413,10 +528,18 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           />
         ))}
         
-        {/* Flow 2: Hub → Main Categories */}
-        {hubToCategoryPaths.map((pathData, index) => (
+        {/* Flow 2: Total Income → Budget */}
+        <path
+          d={totalIncomeToBudgetPath}
+          fill="hsl(var(--chart-1))"
+          opacity="0.8"
+          filter="url(#shadow)"
+        />
+        
+        {/* Flow 3: Budget → Main Categories */}
+        {budgetToCategoryPaths.map((pathData, index) => (
           <path
-            key={`hub-to-category-${index}`}
+            key={`budget-to-category-${index}`}
             d={pathData.path}
             fill={pathData.color}
             opacity="0.8"
@@ -424,7 +547,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           />
         ))}
         
-        {/* Flow 3: Main Categories → Subcategories */}
+        {/* Flow 4: Main Categories → Subcategories */}
         {categoryToSubcategoryPaths.map((pathData, index) => (
           <path
             key={`category-to-sub-${index}`}
@@ -435,7 +558,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           />
         ))}
         
-        {/* Column 1: Income Source Nodes (multiple sources) */}
+        {/* Column 1: Income Source Nodes */}
         {incomeSourceNodes.map((source) => (
           <g key={source.id}>
             <rect
@@ -448,30 +571,30 @@ function SankeyChart({ data }: { data: CashFlowData }) {
               filter="url(#shadow)"
             />
             <text
-              x={col1X + nodeWidth / 2}
-              y={source.y + Math.min(source.height / 2, 12) - 6}
-              textAnchor="middle"
+              x={col1X - 5}
+              y={source.y + source.height / 2 - 4}
+              textAnchor="end"
               dominantBaseline="middle"
-              fill="white"
-              fontSize="12"
+              fill="hsl(var(--foreground))"
+              fontSize="10"
               fontWeight="bold"
             >
-              {source.name.length > 15 ? source.name.substring(0, 15) + '...' : source.name}
+              {source.name.length > 12 ? source.name.substring(0, 12) + '...' : source.name}
             </text>
             <text
-              x={col1X + nodeWidth / 2}
-              y={source.y + Math.min(source.height / 2, 12) + 8}
-              textAnchor="middle"
+              x={col1X - 5}
+              y={source.y + source.height / 2 + 6}
+              textAnchor="end"
               dominantBaseline="middle"
-              fill="white"
-              fontSize="11"
+              fill="hsl(var(--foreground))"
+              fontSize="8"
             >
               {formatCurrency(source.amount)}
             </text>
           </g>
         ))}
         
-        {/* Column 2: Budget Hub */}
+        {/* Column 2: Total Income */}
         <rect
           x={col2X}
           y={col2Y}
@@ -482,125 +605,206 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           filter="url(#shadow)"
         />
         <text
-          x={col2X + nodeWidth / 2}
-          y={col2Y + col2Height / 2 - 8}
-          textAnchor="middle"
+          x={col2X - 5}
+          y={col2Y + col2Height / 2 - 5}
+          textAnchor="end"
           dominantBaseline="middle"
-          fill="white"
-          fontSize="13"
+          fill="hsl(var(--foreground))"
+          fontSize="10"
+          fontWeight="bold"
+        >
+          Total Income
+        </text>
+        <text
+          x={col2X - 5}
+          y={col2Y + col2Height / 2 + 6}
+          textAnchor="end"
+          dominantBaseline="middle"
+          fill="hsl(var(--foreground))"
+          fontSize="8"
+        >
+          {formatCurrency(income)}
+        </text>
+        
+        {/* Column 3: Budget */}
+        <rect
+          x={col3X}
+          y={col3Y}
+          width={nodeWidth}
+          height={col3Height}
+          fill="hsl(var(--chart-1))"
+          rx="4"
+          filter="url(#shadow)"
+        />
+        <text
+          x={col3X - 5}
+          y={col3Y + col3Height / 2 - 5}
+          textAnchor="end"
+          dominantBaseline="middle"
+          fill="hsl(var(--foreground))"
+          fontSize="10"
           fontWeight="bold"
         >
           Budget
         </text>
         <text
-          x={col2X + nodeWidth / 2}
-          y={col2Y + col2Height / 2 + 8}
-          textAnchor="middle"
+          x={col3X - 5}
+          y={col3Y + col3Height / 2 + 6}
+          textAnchor="end"
           dominantBaseline="middle"
-          fill="white"
-          fontSize="12"
+          fill="hsl(var(--foreground))"
+          fontSize="8"
         >
-          {formatCurrency(income)}
+          {formatCurrency(totalOutflow)}
         </text>
         
-        {/* Column 3: Main Category Nodes */}
-        {categoryNodes.map((node, index) => (
-          <g key={node.id}>
-            <rect
-              x={col3X}
-              y={node.y}
-              width={nodeWidth}
-              height={node.height}
-              fill={getCategoryColor(node, index)}
-              rx="4"
-              filter="url(#shadow)"
-            />
-            <text
-              x={col3X + nodeWidth / 2}
-              y={node.y + Math.min(node.height / 2, 12) - 6}
-              textAnchor="middle"
+        {/* Column 4: Main Category Nodes */}
+        {categoryNodes.map((node) => {
+          const nodeColor = node.categoryId ? getCategoryColor(node.categoryId, undefined) : 
+                            node.type === 'subscription' ? 'hsl(280, 70%, 55%)' :
+                            node.type === 'savings' ? 'hsl(142, 70%, 55%)' :
+                            node.type === 'loan' ? 'hsl(340, 70%, 55%)' :
+                            'hsl(var(--destructive))';
+          return (
+            <g key={node.id}>
+              <rect
+                x={col4X}
+                y={node.y}
+                width={nodeWidth}
+                height={node.height}
+                fill={nodeColor}
+                rx="4"
+                filter="url(#shadow)"
+              />
+              <text
+                x={col4X - 5}
+              y={node.y + node.height / 2 - 4}
+              textAnchor="end"
               dominantBaseline="middle"
-              fill="white"
-              fontSize="11"
-              fontWeight="bold"
-            >
-              {node.name}
-            </text>
-            <text
-              x={col3X + nodeWidth / 2}
-              y={node.y + Math.min(node.height / 2, 12) + 8}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="white"
-              fontSize="10"
-            >
-              {formatCurrency(node.amount)}
-            </text>
-          </g>
-        ))}
-        
-        {/* Column 4: Subcategory Nodes */}
-        {subcategoryNodes.map((node) => (
-          <g key={node.id}>
-            <rect
-              x={col4X}
-              y={node.y}
-              width={nodeWidth}
-              height={node.height}
-              fill={(() => {
-                const parentCategory = categoryNodes.find((cat, idx) => cat.id === node.parentId);
-                if (!parentCategory) return 'hsl(var(--destructive))';
-                // If subcategory is an expense category, use its specific color
-                if (node.categoryId && categoryColorMap.has(node.categoryId)) {
-                  return categoryColorMap.get(node.categoryId)!;
-                }
-                // Otherwise use parent category color
-                const parentIndex = categoryNodes.findIndex(cat => cat.id === node.parentId);
-                return getCategoryColor(parentCategory, parentIndex);
-              })()}
-              rx="4"
-              filter="url(#shadow)"
-            />
-            <text
-              x={col4X + nodeWidth / 2}
-              y={node.y + Math.min(node.height / 2, 10) - 5}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="white"
-              fontSize="9"
-              fontWeight="bold"
-            >
-              {node.name.length > 14 ? node.name.substring(0, 14) + '...' : node.name}
-            </text>
-            <text
-              x={col4X + nodeWidth / 2}
-              y={node.y + Math.min(node.height / 2, 10) + 7}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="white"
+              fill="hsl(var(--foreground))"
               fontSize="8"
+              fontWeight="bold"
             >
-              {formatCurrency(node.amount)}
+              {node.name.length > 10 ? node.name.substring(0, 10) + '...' : node.name}
             </text>
-          </g>
-        ))}
+            <text
+              x={col4X - 5}
+              y={node.y + node.height / 2 + 6}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fill="hsl(var(--foreground))"
+              fontSize="7"
+            >
+                {formatCurrency(node.amount)}
+              </text>
+            </g>
+          );
+        })}
+        
+        {/* Column 5: Subcategory Nodes */}
+        {subcategoryNodes.map((node) => {
+          const parentCategory = categoryNodes.find(cat => cat.id === node.parentId);
+          const nodeColor = node.categoryId ? getCategoryColor(node.categoryId, undefined) :
+                            parentCategory?.categoryId ? getCategoryColor(parentCategory.categoryId, undefined) :
+                            'hsl(var(--destructive))';
+          return (
+            <g key={node.id}>
+              <rect
+                x={col5X}
+                y={node.y}
+                width={nodeWidth}
+                height={node.height}
+                fill={nodeColor}
+                rx="4"
+                filter="url(#shadow)"
+              />
+              <text
+              x={col5X - 5}
+              y={node.y + node.height / 2 - 3}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fill="hsl(var(--foreground))"
+              fontSize="7"
+              fontWeight="bold"
+            >
+              {node.name.length > 10 ? node.name.substring(0, 10) + '...' : node.name}
+            </text>
+            <text
+              x={col5X - 5}
+              y={node.y + node.height / 2 + 5}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fill="hsl(var(--foreground))"
+              fontSize="6"
+            >
+                {formatCurrency(node.amount)}
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
 }
 
 function HorizontalBarChart({ data }: { data: CashFlowData }) {
-  // Group expenses by category, not vendors
+  // Group expenses by main category (aggregate subcategories under their parents)
   const expensesByCategory = data.expensesByCategory || [];
   const topVendors = data.topVendors || [];
 
-  // Remove income - only show expense categories
-  const chartData = expensesByCategory.map((cat) => ({
-    name: cat.categoryName,
-    value: -cat.total, // Negative for expenses (left side of axis)
-    categoryId: cat.categoryId,
-    color: cat.color || "hsl(var(--destructive))",
-  })).filter((item) => Math.abs(item.value) > 0);
+  // Build category map to find parent categories
+  const categoryMap = new Map(expensesByCategory.map(cat => [cat.categoryId, cat]));
+  
+  // Group by main category - if a category has a parentId, group under parent
+  const mainCategoryMap = new Map<string, { categoryId: string; categoryName: string; total: number; color?: string }>();
+  
+  expensesByCategory.forEach((cat) => {
+    if (cat.parentId) {
+      // This is a subcategory - add to parent category
+      const parent = categoryMap.get(cat.parentId);
+      if (parent) {
+        const existing = mainCategoryMap.get(cat.parentId);
+        if (existing) {
+          existing.total += cat.total;
+        } else {
+          mainCategoryMap.set(cat.parentId, {
+            categoryId: parent.categoryId,
+            categoryName: parent.categoryName,
+            total: cat.total,
+            color: parent.color || cat.color,
+          });
+        }
+      }
+    } else {
+      // This is a main category
+      const existing = mainCategoryMap.get(cat.categoryId);
+      if (existing) {
+        existing.total += cat.total;
+      } else {
+        mainCategoryMap.set(cat.categoryId, {
+          categoryId: cat.categoryId,
+          categoryName: cat.categoryName,
+          total: cat.total,
+          color: cat.color,
+        });
+      }
+    }
+  });
+
+  // Convert to array and sort by total (descending)
+  const mainCategoryData = Array.from(mainCategoryMap.values())
+    .sort((a, b) => b.total - a.total);
+
+  // Create chart data with absolute values (positive) starting from bottom left
+  // Include all categories that have transactions (value > 0)
+  const chartData = mainCategoryData
+    .filter((cat) => Math.abs(cat.total) > 0) // Only include categories with transactions
+    .map((cat) => ({
+      name: cat.categoryName,
+      value: Math.abs(cat.total), // Absolute value
+      categoryId: cat.categoryId,
+      color: cat.color || "hsl(var(--destructive))",
+    }));
 
   // Generate distinct colors if category doesn't have one
   const getCategoryColor = (index: number, defaultColor?: string) => {
@@ -622,8 +826,18 @@ function HorizontalBarChart({ data }: { data: CashFlowData }) {
     <div className="flex gap-6">
       <ChartContainer config={{}} className="h-[400px] flex-1">
         <BarChart data={chartData} layout="vertical" margin={{ left: 120, right: 100, top: 20, bottom: 20 }}>
-          <XAxis type="number" tickFormatter={formatCurrency} />
-          <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 12 }} />
+          <XAxis 
+            type="number" 
+            tickFormatter={formatCurrency}
+            domain={[0, 'dataMax']}
+          />
+          <YAxis 
+            dataKey="name" 
+            type="category" 
+            width={110} 
+            tick={{ fontSize: 12 }}
+            reversed={true}
+          />
           <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />} />
           <Bar dataKey="value">
             {chartData.map((entry, index) => (

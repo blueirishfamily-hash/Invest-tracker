@@ -2902,8 +2902,9 @@ export const demoTransactions: Transaction[] = [
       "cat-4": { merchants: ["Acme Corp", "Payroll", "Employer", "Freelance Client"], categoryId: "cat-4", amountRange: [2000, 6000] }, // Salary
     };
     
-    // Get all category entries
+    // Get all category entries, excluding salary (cat-4) for expense selection
     const categoryEntries = Object.values(merchantCategoryMap);
+    const expenseCategoryEntries = categoryEntries.filter(entry => entry.categoryId !== "cat-4");
     
     // Generate ~50 transactions total
     for (let i = 0; i < 47; i++) {
@@ -2915,11 +2916,11 @@ export const demoTransactions: Transaction[] = [
       let categoryEntry;
       
       if (isIncome) {
-        // Use income category
+        // Use income category (only for positive transactions)
         categoryEntry = merchantCategoryMap["cat-4"];
       } else {
-        // Randomly select from expense categories
-        categoryEntry = categoryEntries[Math.floor(Math.random() * categoryEntries.length)];
+        // Randomly select from expense categories (excluding salary)
+        categoryEntry = expenseCategoryEntries[Math.floor(Math.random() * expenseCategoryEntries.length)];
       }
       
       const merchant = categoryEntry.merchants[Math.floor(Math.random() * categoryEntry.merchants.length)];
