@@ -46,6 +46,7 @@ export function TransactionsContent() {
     categoryId: "",
     tags: [] as string[],
     notes: "",
+    isVerified: false,
   });
   const [editFormData, setEditFormData] = useState({
     date: "",
@@ -182,12 +183,16 @@ export function TransactionsContent() {
 
   const handleAddTransaction = () => {
     if (!formData.accountId || !formData.name || !formData.amount) return;
+    const amount = parseFloat(formData.amount);
+    // Amount will be normalized on the server, but we need to set direction based on user selection
+    // If user selected "debit" (expense), amount should be negative; if "credit" (income), positive
+    const normalizedAmount = formData.direction === "debit" ? -Math.abs(amount) : Math.abs(amount);
     createMutation.mutate({
       accountId: formData.accountId,
       date: new Date(formData.date).toISOString(),
       name: formData.name,
       merchantName: formData.merchantName || undefined,
-      amount: parseFloat(formData.amount),
+      amount: normalizedAmount,
       direction: formData.direction,
       categoryId: formData.categoryId || undefined,
       tags: formData.tags,
@@ -195,6 +200,7 @@ export function TransactionsContent() {
       isSplit: false,
       splits: undefined,
       notes: formData.notes || undefined,
+      isVerified: formData.isVerified,
     });
   };
 
@@ -224,14 +230,24 @@ export function TransactionsContent() {
         console.error("Invalid amount value");
         return;
       }
+      // Handle uncategorized selection - convert __uncategorized__ to undefined
+      const categoryId = editFormData.categoryId === "__uncategorized__" || editFormData.categoryId === "" 
+        ? undefined 
+        : editFormData.categoryId || undefined;
+      
+      // Determine direction based on selected transaction's current direction
+      // If updating amount, preserve the direction (amount will be normalized on server)
+      const currentDirection = selectedTransaction.direction;
+      const normalizedAmount = currentDirection === "debit" ? -amountValue : amountValue;
+      
       updateMutation.mutate({
         id: selectedTransaction.id,
         updates: {
           date: new Date(editFormData.date).toISOString(),
           merchantName: editFormData.merchantName || undefined,
           name: editFormData.name || "",
-          amount: amountValue,
-          categoryId: editFormData.categoryId || undefined,
+          amount: normalizedAmount,
+          categoryId: categoryId,
         },
       });
     } catch (error) {
@@ -400,16 +416,19 @@ export function TransactionsContent() {
                   <TableRow 
                     key={txn.id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => {
+                    onClick={(e) => {
                       try {
+                        e.preventDefault();
+                        e.stopPropagation();
                         setSelectedTransaction(txn);
                         const dateValue = txn.date ? new Date(txn.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
                         setEditFormData({
                           date: dateValue,
                           merchantName: txn.merchantName || "",
                           name: txn.name || "",
-                          amount: txn.amount !== undefined && txn.amount !== null ? String(txn.amount) : "",
-                          categoryId: txn.categoryId || "",
+                          // Display absolute value in edit form (amount is always stored as positive)
+                          amount: txn.amount !== undefined && txn.amount !== null ? String(Math.abs(txn.amount)) : "",
+                          categoryId: txn.categoryId && txn.categoryId !== "" ? txn.categoryId : "__uncategorized__",
                         });
                         setIsEditOpen(true);
                       } catch (error) {
@@ -436,7 +455,7 @@ export function TransactionsContent() {
                     </TableCell>
                     <TableCell className="text-right">
                       <span className={txn.direction === "debit" ? "text-destructive" : "text-emerald-600"}>
-                        {formatCurrency(txn.amount)}
+                        {formatCurrency(txn.direction === "debit" ? -txn.amount : txn.amount)}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
@@ -482,6 +501,22 @@ export function TransactionsContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
+            {/* Account Name and Verified Status */}
+            <div className="flex items-center justify-between pb-2 border-b">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium">Account:</Label>
+                <span className="text-sm text-muted-foreground">
+                  {selectedTransaction && accounts 
+                    ? accounts.find(acc => acc.id === selectedTransaction.accountId)?.name || "Unknown Account"
+                    : "Loading..."}
+                </span>
+              </div>
+              {selectedTransaction?.isVerified && (
+                <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                  Verified
+                </Badge>
+              )}
+            </div>
             <div className="grid gap-2">
               <Label>Date</Label>
               <Input
@@ -519,14 +554,14 @@ export function TransactionsContent() {
             <div className="grid gap-2">
               <Label>Category</Label>
               <Select
-                value={editFormData.categoryId}
+                value={editFormData.categoryId && editFormData.categoryId !== "" ? editFormData.categoryId : undefined}
                 onValueChange={(value) => setEditFormData({ ...editFormData, categoryId: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Uncategorized</SelectItem>
+                  <SelectItem value="__uncategorized__">Uncategorized</SelectItem>
                   {(categories || []).map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
                       {cat.name}

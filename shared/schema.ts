@@ -905,6 +905,7 @@ export const transactionSchema = z.object({
   isSplit: z.boolean().default(false),
   splits: z.array(transactionSplitSchema).optional(),
   notes: z.string().optional(),
+  isVerified: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

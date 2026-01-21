@@ -1,10 +1,11 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SEO } from "@/components/seo";
-import { Wallet, ReceiptText, BarChart3, CalendarDays } from "lucide-react";
+import { Wallet, ReceiptText, BarChart3, CalendarDays, TrendingDown } from "lucide-react";
 import { CashFlowContent } from "./cash-flow";
 import { TransactionsContent } from "./transactions";
 import { BillsContent } from "./bills";
 import { InsightsContent } from "./insights";
+import { DebtPayoffContent } from "./debt-payoff";
 
 export default function BudgetPage() {
   return (
@@ -41,6 +42,10 @@ export default function BudgetPage() {
             <BarChart3 className="h-4 w-4 mr-2" />
             Insights
           </TabsTrigger>
+          <TabsTrigger value="debt-payoff">
+            <TrendingDown className="h-4 w-4 mr-2" />
+            Debt Payoff
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="cash-flow" className="mt-6">
           <CashFlowContent />
@@ -53,6 +58,9 @@ export default function BudgetPage() {
         </TabsContent>
         <TabsContent value="insights" className="mt-6">
           <InsightsContent />
+        </TabsContent>
+        <TabsContent value="debt-payoff" className="mt-6">
+          <DebtPayoffContent />
         </TabsContent>
       </Tabs>
     </div>

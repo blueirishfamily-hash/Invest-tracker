@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SEO } from "@/components/seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Calendar } from "@/components/ui/calendar";
 import { CalendarDays, Plus, Repeat } from "lucide-react";
-import type { Bill, Subscription, TransactionCategory, DebtPlan } from "@shared/schema";
+import { cn } from "@/lib/utils";
+import type { Bill, Subscription, TransactionCategory } from "@shared/schema";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -19,11 +21,138 @@ const formatCurrency = (value: number) =>
     minimumFractionDigits: 2,
   }).format(value);
 
+// Helper function to calculate next due date for a bill
+const getNextDueDate = (bill: Bill, targetMonth: Date): Date | null => {
+  const base = new Date(bill.dueDate);
+  if (Number.isNaN(base.getTime())) return null;
+  
+  const monthStart = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), 1);
+  const monthEnd = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+  
+  let next = new Date(base);
+  
+  // For one-time bills, check if it falls in the target month
+  if (bill.frequency === "one-time") {
+    return next >= monthStart && next <= monthEnd ? next : null;
+  }
+  
+  // For recurring bills, find the next occurrence in the target month
+  while (next < monthStart) {
+    switch (bill.frequency) {
+      case "weekly":
+        next.setDate(next.getDate() + 7);
+        break;
+      case "biweekly":
+        next.setDate(next.getDate() + 14);
+        break;
+      case "monthly":
+        next.setMonth(next.getMonth() + 1);
+        break;
+      case "quarterly":
+        next.setMonth(next.getMonth() + 3);
+        break;
+      case "yearly":
+        next.setFullYear(next.getFullYear() + 1);
+        break;
+      default:
+        return null;
+    }
+  }
+  
+  // Check if the next date is within the target month
+  if (next > monthEnd) {
+    // Find the first occurrence in the month by going backwards
+    while (next > monthEnd) {
+      switch (bill.frequency) {
+        case "weekly":
+          next.setDate(next.getDate() - 7);
+          break;
+        case "biweekly":
+          next.setDate(next.getDate() - 14);
+          break;
+        case "monthly":
+          next.setMonth(next.getMonth() - 1);
+          break;
+        case "quarterly":
+          next.setMonth(next.getMonth() - 3);
+          break;
+        case "yearly":
+          next.setFullYear(next.getFullYear() - 1);
+          break;
+        default:
+          return null;
+      }
+    }
+    // Then go forward to find the first occurrence in the month
+    while (next < monthStart) {
+      switch (bill.frequency) {
+        case "weekly":
+          next.setDate(next.getDate() + 7);
+          break;
+        case "biweekly":
+          next.setDate(next.getDate() + 14);
+          break;
+        case "monthly":
+          next.setMonth(next.getMonth() + 1);
+          break;
+        case "quarterly":
+          next.setMonth(next.getMonth() + 3);
+          break;
+        case "yearly":
+          next.setFullYear(next.getFullYear() + 1);
+          break;
+        default:
+          return null;
+      }
+    }
+  }
+  
+  return next >= monthStart && next <= monthEnd ? next : null;
+};
+
+// Helper function to calculate next billing date for a subscription
+const getNextBillingDate = (subscription: Subscription, targetMonth: Date): Date | null => {
+  const base = new Date(subscription.nextBillingDate);
+  if (Number.isNaN(base.getTime())) return null;
+  
+  const monthStart = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), 1);
+  const monthEnd = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+  
+  let next = new Date(base);
+  
+  // Find the next occurrence in the target month
+  while (next < monthStart) {
+    switch (subscription.cadence) {
+      case "weekly":
+        next.setDate(next.getDate() + 7);
+        break;
+      case "monthly":
+        next.setMonth(next.getMonth() + 1);
+        break;
+      case "quarterly":
+        next.setMonth(next.getMonth() + 3);
+        break;
+      case "yearly":
+        next.setFullYear(next.getFullYear() + 1);
+        break;
+      default:
+        return null;
+    }
+  }
+  
+  // Check if the next date is within the target month
+  if (next > monthEnd) {
+    return null;
+  }
+  
+  return next >= monthStart && next <= monthEnd ? next : null;
+};
+
 export function BillsContent() {
   const queryClient = useQueryClient();
   const [isBillOpen, setIsBillOpen] = useState(false);
   const [isSubOpen, setIsSubOpen] = useState(false);
-  const [isDebtOpen, setIsDebtOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
 
   const [billForm, setBillForm] = useState({
     name: "",
@@ -44,15 +173,6 @@ export function BillsContent() {
     status: "active",
   });
 
-  const [debtForm, setDebtForm] = useState({
-    name: "",
-    method: "snowball",
-    extraPayment: "",
-  });
-  const [debts, setDebts] = useState<Array<{ name: string; balance: string; interestRate: string; minimumPayment: string }>>([
-    { name: "", balance: "", interestRate: "", minimumPayment: "" },
-  ]);
-
   const { data: bills } = useQuery<Bill[]>({
     queryKey: ["/api/bills"],
   });
@@ -62,9 +182,96 @@ export function BillsContent() {
   const { data: categories } = useQuery<TransactionCategory[]>({
     queryKey: ["/api/transaction-categories"],
   });
-  const { data: debtPlans } = useQuery<DebtPlan[]>({
-    queryKey: ["/api/debt-plans"],
-  });
+
+  // Calculate dates for bills and subscriptions in the selected month
+  const monthItems = useMemo(() => {
+    if (!bills || !subscriptions) return { billsByDate: new Map(), subsByDate: new Map(), allItems: [], upcomingBills: [] };
+    
+    const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
+    const monthEnd = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const billsByDate = new Map<string, Bill[]>();
+    const subsByDate = new Map<string, Subscription[]>();
+    const allItems: Array<{ type: "bill" | "subscription"; item: Bill | Subscription; date: Date; isPaid?: boolean }> = [];
+    const upcomingBills: Array<{ bill: Bill; dueDate: Date; isPaid: boolean }> = [];
+    
+    // Process bills
+    bills.forEach((bill) => {
+      const nextDate = getNextDueDate(bill, selectedMonth);
+      if (nextDate) {
+        const dateKey = nextDate.toISOString().slice(0, 10);
+        const existing = billsByDate.get(dateKey) || [];
+        billsByDate.set(dateKey, [...existing, bill]);
+        
+        // Check if bill is paid for this month
+        // A bill is considered paid if:
+        // 1. Status is "paid", OR
+        // 2. lastPaidDate exists and is within the current month
+        const isPaid = bill.status === "paid" || 
+          (bill.lastPaidDate && (() => {
+            const lastPaid = new Date(bill.lastPaidDate);
+            lastPaid.setHours(0, 0, 0, 0);
+            return lastPaid >= monthStart && lastPaid <= monthEnd;
+          })());
+        
+        allItems.push({ type: "bill", item: bill, date: nextDate, isPaid });
+        
+        // Add to upcoming bills if due date is today or in the future
+        if (nextDate >= today) {
+          upcomingBills.push({ bill, dueDate: nextDate, isPaid: isPaid || false });
+        }
+      }
+    });
+    
+    // Process subscriptions
+    subscriptions
+      .filter((sub) => sub.status === "active")
+      .forEach((sub) => {
+        const nextDate = getNextBillingDate(sub, selectedMonth);
+        if (nextDate) {
+          const dateKey = nextDate.toISOString().slice(0, 10);
+          const existing = subsByDate.get(dateKey) || [];
+          subsByDate.set(dateKey, [...existing, sub]);
+          allItems.push({ type: "subscription", item: sub, date: nextDate });
+        }
+      });
+    
+    // Sort all items by date
+    allItems.sort((a, b) => a.date.getTime() - b.date.getTime());
+    // Sort upcoming bills by date
+    upcomingBills.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+    
+    return { billsByDate, subsByDate, allItems, upcomingBills };
+  }, [bills, subscriptions, selectedMonth]);
+  
+  // Get dates that have bills or subscriptions for calendar modifiers
+  const datesWithBills = useMemo(() => {
+    const dates: Date[] = [];
+    monthItems.billsByDate.forEach((_, dateKey) => {
+      dates.push(new Date(dateKey));
+    });
+    return dates;
+  }, [monthItems.billsByDate]);
+  
+  const datesWithSubs = useMemo(() => {
+    const dates: Date[] = [];
+    monthItems.subsByDate.forEach((_, dateKey) => {
+      dates.push(new Date(dateKey));
+    });
+    return dates;
+  }, [monthItems.subsByDate]);
+  
+  const datesWithBoth = useMemo(() => {
+    const dates: Date[] = [];
+    monthItems.billsByDate.forEach((_, dateKey) => {
+      if (monthItems.subsByDate.has(dateKey)) {
+        dates.push(new Date(dateKey));
+      }
+    });
+    return dates;
+  }, [monthItems]);
 
   const billMutation = useMutation({
     mutationFn: async (payload: any) => {
@@ -118,27 +325,6 @@ export function BillsContent() {
         categoryId: "",
         status: "active",
       });
-    },
-  });
-
-  const debtMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const res = await fetch("/api/debt-plans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to create debt plan");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/debt-plans"] });
-      setIsDebtOpen(false);
-      setDebtForm({ name: "", method: "snowball", extraPayment: "" });
-      setDebts([{ name: "", balance: "", interestRate: "", minimumPayment: "" }]);
     },
   });
 
@@ -344,7 +530,6 @@ export function BillsContent() {
           <TabsTrigger value="bills">Bills</TabsTrigger>
           <TabsTrigger value="subscriptions">Subscriptions</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="debt">Debt Payoff</TabsTrigger>
         </TabsList>
         <TabsContent value="bills">
           <Card>
@@ -395,191 +580,183 @@ export function BillsContent() {
           </Card>
         </TabsContent>
         <TabsContent value="calendar">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4" />
-                Bill Calendar
-              </CardTitle>
-              <CardDescription>Upcoming bills and subscriptions at a glance.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {(bills || []).map((bill) => (
-                <div key={`calendar-${bill.id}`} className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <div className="font-semibold">{bill.name}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(bill.dueDate).toLocaleDateString()}</div>
-                  </div>
-                  <Badge variant="outline">{formatCurrency(bill.amount)}</Badge>
-                </div>
-              ))}
-              {(subscriptions || []).map((sub) => (
-                <div key={`calendar-${sub.id}`} className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <div className="font-semibold">{sub.name}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(sub.nextBillingDate).toLocaleDateString()}</div>
-                  </div>
-                  <Badge variant="outline">{formatCurrency(sub.amount)}</Badge>
-                </div>
-              ))}
-              {(!bills?.length && !subscriptions?.length) && (
-                <div className="text-sm text-muted-foreground">No upcoming items yet.</div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="debt">
-          <div className="space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold tracking-tight">Debt Payoff Plans</h3>
-                <p className="text-muted-foreground">Use the snowball or avalanche method to plan your path to being debt-free.</p>
-              </div>
-              <Dialog open={isDebtOpen} onOpenChange={setIsDebtOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Debt Plan
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-xl">
-                  <DialogHeader>
-                    <DialogTitle>New Debt Plan</DialogTitle>
-                    <DialogDescription>Use the snowball or avalanche method.</DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4">
-                    <div className="grid gap-2">
-                      <Label>Name</Label>
-                      <Input value={debtForm.name} onChange={(e) => setDebtForm({ ...debtForm, name: e.target.value })} />
+          <div className="space-y-6">
+            {/* Calendar and Upcoming Bills Side by Side */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Calendar */}
+              <Card className="flex-1">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
+                    Bill Calendar
+                  </CardTitle>
+                  <CardDescription>Upcoming bills and subscriptions at a glance.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Calendar
+                    mode="single"
+                    month={selectedMonth}
+                    onMonthChange={setSelectedMonth}
+                    className="rounded-md border"
+                    classNames={{
+                      day: "relative flex flex-col items-center justify-center",
+                    }}
+                    components={{
+                      Day: (props) => {
+                        const { date, displayMonth, ...dayProps } = props as any;
+                        const dateKey = date.toISOString().slice(0, 10);
+                        const dayBills = monthItems.billsByDate.get(dateKey) || [];
+                        const daySubs = monthItems.subsByDate.get(dateKey) || [];
+                        const isCurrentMonth = date.getMonth() === displayMonth.getMonth();
+                        
+                        return (
+                          <button
+                            type="button"
+                            {...dayProps}
+                            className={cn(
+                              "relative h-9 w-9 p-0 font-normal rounded-md hover:bg-accent hover:text-accent-foreground flex flex-col items-center justify-center",
+                              !isCurrentMonth && "text-muted-foreground opacity-50",
+                              dayProps.className
+                            )}
+                          >
+                            <span>{date.getDate()}</span>
+                            {isCurrentMonth && (dayBills.length > 0 || daySubs.length > 0) && (
+                              <div className="absolute bottom-0.5 left-1/2 transform -translate-x-1/2 flex gap-0.5 items-center justify-center pointer-events-none">
+                                {dayBills.map((_, billIdx) => (
+                                  <div
+                                    key={`bill-dot-${dateKey}-${billIdx}`}
+                                    className="w-1.5 h-1.5 rounded-full bg-red-500"
+                                  />
+                                ))}
+                                {daySubs.map((_, subIdx) => (
+                                  <div
+                                    key={`sub-dot-${dateKey}-${subIdx}`}
+                                    className="w-1.5 h-1.5 rounded-full bg-blue-500"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      },
+                    }}
+                  />
+                  <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-red-500" />
+                      <span>Bills</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="grid gap-2">
-                        <Label>Method</Label>
-                        <Select value={debtForm.method} onValueChange={(value) => setDebtForm({ ...debtForm, method: value })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Method" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="snowball">Snowball</SelectItem>
-                            <SelectItem value="avalanche">Avalanche</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Extra Payment</Label>
-                        <Input
-                          type="number"
-                          value={debtForm.extraPayment}
-                          onChange={(e) => setDebtForm({ ...debtForm, extraPayment: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Debts</Label>
-                      {debts.map((debt, index) => (
-                        <div key={`debt-${index}`} className="grid grid-cols-4 gap-2">
-                          <Input
-                            placeholder="Name"
-                            value={debt.name}
-                            onChange={(e) =>
-                              setDebts((prev) => prev.map((item, idx) => (idx === index ? { ...item, name: e.target.value } : item)))
-                            }
-                          />
-                          <Input
-                            type="number"
-                            placeholder="Balance"
-                            value={debt.balance}
-                            onChange={(e) =>
-                              setDebts((prev) => prev.map((item, idx) => (idx === index ? { ...item, balance: e.target.value } : item)))
-                            }
-                          />
-                          <Input
-                            type="number"
-                            placeholder="Rate %"
-                            value={debt.interestRate}
-                            onChange={(e) =>
-                              setDebts((prev) => prev.map((item, idx) => (idx === index ? { ...item, interestRate: e.target.value } : item)))
-                            }
-                          />
-                          <Input
-                            type="number"
-                            placeholder="Min Pay"
-                            value={debt.minimumPayment}
-                            onChange={(e) =>
-                              setDebts((prev) => prev.map((item, idx) => (idx === index ? { ...item, minimumPayment: e.target.value } : item)))
-                            }
-                          />
-                        </div>
-                      ))}
-                      <Button variant="outline" onClick={() => setDebts((prev) => [...prev, { name: "", balance: "", interestRate: "", minimumPayment: "" }])}>
-                        Add Debt
-                      </Button>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      <span>Subscriptions</span>
                     </div>
                   </div>
-                  <DialogFooter>
-                    <Button
-                      onClick={() =>
-                        debtMutation.mutate({
-                          name: debtForm.name,
-                          method: debtForm.method,
-                          extraPayment: parseFloat(debtForm.extraPayment || "0"),
-                          debts: debts
-                            .filter((debt) => debt.name)
-                            .map((debt, index) => ({
-                              id: `debt-item-${index}`,
-                              name: debt.name,
-                              balance: parseFloat(debt.balance || "0"),
-                              interestRate: parseFloat(debt.interestRate || "0"),
-                              minimumPayment: parseFloat(debt.minimumPayment || "0"),
-                            })),
-                        })
-                      }
-                      disabled={debtMutation.isPending}
-                    >
-                      {debtMutation.isPending ? "Saving..." : "Save Plan"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-            {(debtPlans || []).map((plan) => {
-              const sortedDebts = [...plan.debts].sort((a, b) =>
-                plan.method === "snowball" ? a.balance - b.balance : b.interestRate - a.interestRate
-              );
-              return (
-                <Card key={plan.id}>
-                  <CardHeader>
-                    <CardTitle>{plan.name}</CardTitle>
-                    <CardDescription>
-                      {plan.method === "snowball" ? "Snowball" : "Avalanche"} method • Extra payment {formatCurrency(plan.extraPayment)}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {sortedDebts.map((debt) => (
-                      <div key={debt.id} className="flex items-center justify-between rounded-lg border p-3">
-                        <div>
-                          <div className="font-semibold">{debt.name}</div>
+                </CardContent>
+              </Card>
+              
+              {/* Upcoming Bills on the right */}
+              <Card className="lg:w-80">
+                <CardHeader>
+                  <CardTitle>Upcoming Bills</CardTitle>
+                  <CardDescription>Bills due today or later this month.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {monthItems.upcomingBills.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No upcoming bills.</div>
+                  ) : (
+                    monthItems.upcomingBills.map(({ bill, dueDate, isPaid }) => (
+                      <div key={bill.id} className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold">{bill.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            Balance {formatCurrency(debt.balance)} • Rate {debt.interestRate}%
+                            Due {dueDate.toLocaleDateString()} • {bill.frequency}
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          Min payment {formatCurrency(debt.minimumPayment)}
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{formatCurrency(bill.amount)}</Badge>
+                          {isPaid && (
+                            <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                              Paid
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              );
-            })}
-            {(!debtPlans || debtPlans.length === 0) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>No debt plans yet</CardTitle>
-                  <CardDescription>Add a plan to start tracking your payoff path.</CardDescription>
-                </CardHeader>
+                    ))
+                  )}
+                </CardContent>
               </Card>
-            )}
+            </div>
+            
+            {/* All Bills for the Month */}
+            <Card>
+              <CardHeader>
+                <CardTitle>All Bills This Month</CardTitle>
+                <CardDescription>
+                  {selectedMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {monthItems.allItems.filter(item => item.type === "bill").length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No bills this month.</div>
+                ) : (
+                  monthItems.allItems
+                    .filter(item => item.type === "bill")
+                    .map((item) => {
+                      const bill = item.item as Bill;
+                      return (
+                        <div key={bill.id} className="flex items-center justify-between rounded-lg border p-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold">{bill.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Due {item.date.toLocaleDateString()} • {bill.frequency}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{formatCurrency(bill.amount)}</Badge>
+                            {item.isPaid && (
+                              <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                                Paid
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </CardContent>
+            </Card>
+            
+            {/* All Subscriptions for the Month */}
+            <Card>
+              <CardHeader>
+                <CardTitle>All Subscriptions This Month</CardTitle>
+                <CardDescription>
+                  {selectedMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {monthItems.allItems.filter(item => item.type === "subscription").length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No subscriptions this month.</div>
+                ) : (
+                  monthItems.allItems
+                    .filter(item => item.type === "subscription")
+                    .map((item) => {
+                      const subscription = item.item as Subscription;
+                      return (
+                        <div key={subscription.id} className="flex items-center justify-between rounded-lg border p-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold">{subscription.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Next bill {item.date.toLocaleDateString()} • {subscription.cadence}
+                            </div>
+                          </div>
+                          <Badge variant="outline">{formatCurrency(subscription.amount)}</Badge>
+                        </div>
+                      );
+                    })
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>

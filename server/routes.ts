@@ -1874,8 +1874,8 @@ export async function registerRoutes(
           date: new Date().toISOString(),
           name: "Grocery Market",
           merchantName: "Grocery Market",
-          amount: -82.45,
-          direction: "debit" as const,
+          amount: 82.45, // Store as absolute value
+          direction: "debit" as const, // Negative amount becomes debit
           categoryId: groceryMatch?.categoryId,
           appliedRuleId: groceryMatch?.ruleId,
           tags: [],
@@ -1883,14 +1883,15 @@ export async function registerRoutes(
           isSplit: false,
           splits: undefined,
           notes: "Mock sync",
+          isVerified: false,
         },
         {
           accountId: account.id,
           date: new Date().toISOString(),
           name: "Paycheck",
           merchantName: "Employer",
-          amount: 2400,
-          direction: "credit" as const,
+          amount: 2400, // Store as absolute value
+          direction: "credit" as const, // Positive amount becomes credit
           categoryId: payrollMatch?.categoryId,
           appliedRuleId: payrollMatch?.ruleId,
           tags: [],
@@ -1898,6 +1899,7 @@ export async function registerRoutes(
           isSplit: false,
           splits: undefined,
           notes: "Mock sync",
+          isVerified: false,
         },
       ];
       
@@ -2030,6 +2032,15 @@ export async function registerRoutes(
     }
   });
 
+  // Helper function to normalize transaction amount and set direction
+  const normalizeTransaction = (data: { amount: number; direction?: "debit" | "credit" }) => {
+    const amount = Math.abs(data.amount);
+    // If direction is not provided, determine it from the original amount sign
+    // Negative amount = expense (debit), Positive amount = income (credit)
+    const direction = data.direction || (data.amount < 0 ? "debit" : "credit");
+    return { amount, direction };
+  };
+
   app.post("/api/transactions", async (req, res) => {
     try {
       const parseResult = insertTransactionSchema.safeParse(req.body);
@@ -2037,6 +2048,13 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid transaction data", details: parseResult.error.errors });
       }
       const data = parseResult.data;
+      
+      // Normalize amount and set direction automatically
+      const { amount, direction } = normalizeTransaction({ 
+        amount: data.amount, 
+        direction: data.direction 
+      });
+      
       let categoryId = data.categoryId;
       let appliedRuleId: string | undefined;
       
@@ -2049,7 +2067,14 @@ export async function registerRoutes(
         }
       }
       
-      const created = await storage.createTransaction({ ...data, categoryId, appliedRuleId });
+      const created = await storage.createTransaction({ 
+        ...data, 
+        amount, 
+        direction, 
+        categoryId, 
+        appliedRuleId,
+        isVerified: data.isVerified ?? false,
+      });
       res.status(201).json(created);
     } catch (error: any) {
       console.error("Error creating transaction:", error);
@@ -2068,7 +2093,17 @@ export async function registerRoutes(
       const existing = await storage.getTransaction(req.params.id);
       if (!existing) return res.status(404).json({ error: "Transaction not found" });
       
-      const updates = parseResult.data;
+      let updates = parseResult.data;
+      
+      // Normalize amount and set direction if amount is being updated
+      if (updates.amount !== undefined) {
+        const { amount, direction } = normalizeTransaction({ 
+          amount: updates.amount, 
+          direction: updates.direction 
+        });
+        updates = { ...updates, amount, direction };
+      }
+      
       const updated = await storage.updateTransaction(req.params.id, updates);
       if (!updated) return res.status(404).json({ error: "Transaction not found" });
       
@@ -2095,6 +2130,37 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error updating transaction:", error);
       res.status(500).json({ error: error.message || "Failed to update transaction" });
+    }
+  });
+
+  // Migration endpoint to normalize existing transactions
+  app.post("/api/transactions/migrate", async (_req, res) => {
+    try {
+      const transactions = await storage.getTransactions();
+      let migrated = 0;
+      
+      for (const txn of transactions) {
+        // Check if transaction needs normalization
+        const needsUpdate = txn.amount < 0 || (txn.amount >= 0 && !txn.direction);
+        
+        if (needsUpdate) {
+          const { amount, direction } = normalizeTransaction({ 
+            amount: txn.amount, 
+            direction: txn.direction 
+          });
+          
+          // Only update if something changed
+          if (amount !== txn.amount || direction !== txn.direction) {
+            await storage.updateTransaction(txn.id, { amount, direction });
+            migrated++;
+          }
+        }
+      }
+      
+      res.json({ success: true, migrated, total: transactions.length });
+    } catch (error: any) {
+      console.error("Error migrating transactions:", error);
+      res.status(500).json({ error: error.message || "Failed to migrate transactions" });
     }
   });
 
@@ -2712,7 +2778,8 @@ export async function registerRoutes(
           new Date(txn.date).toISOString().slice(0, 10),
           `"${txn.merchantName || ""}"`,
           `"${txn.name}"`,
-          txn.amount.toFixed(2),
+          // Export with sign: negative for expenses, positive for income
+          (txn.direction === "debit" ? -txn.amount : txn.amount).toFixed(2),
           txn.direction,
           `"${txn.categoryId ? categoryLookup.get(txn.categoryId) || "" : ""}"`,
           `"${txn.tags.join("|")}"`,

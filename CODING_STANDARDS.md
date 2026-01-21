@@ -2,6 +2,15 @@
 
 ## Development Workflow
 
+### Communication and Clarification
+**REQUIRED**: Always ask for clarification or questions when needed, even if not in plan mode.
+
+- If requirements are ambiguous or unclear, ask for clarification before implementing
+- If multiple valid implementations are possible, ask which approach is preferred
+- If you encounter edge cases or unexpected scenarios, ask how to handle them
+- Don't make assumptions about user intent - ask questions to ensure correct implementation
+- Questions should be clear, concise, and focused on the specific issue
+
 ### Automatic Server Restarts
 **REQUIRED**: The development server MUST automatically restart whenever code changes are detected.
 
