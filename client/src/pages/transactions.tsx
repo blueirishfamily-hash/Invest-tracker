@@ -29,6 +29,8 @@ const formatCurrency = (value: number) =>
 export function TransactionsContent() {
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const [splitTarget, setSplitTarget] = useState<Transaction | null>(null);
   const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; amount: string; notes: string }>>([
     { categoryId: "", amount: "", notes: "" },
@@ -44,6 +46,13 @@ export function TransactionsContent() {
     categoryId: "",
     tags: [] as string[],
     notes: "",
+  });
+  const [editFormData, setEditFormData] = useState({
+    date: "",
+    merchantName: "",
+    name: "",
+    amount: "",
+    categoryId: "",
   });
   const [ruleForm, setRuleForm] = useState({
     pattern: "",
@@ -151,6 +160,26 @@ export function TransactionsContent() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (payload: { id: string; updates: any }) => {
+      const res = await fetch(`/api/transactions/${payload.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload.updates),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to update transaction");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      setIsEditOpen(false);
+      setSelectedTransaction(null);
+    },
+  });
+
   const handleAddTransaction = () => {
     if (!formData.accountId || !formData.name || !formData.amount) return;
     createMutation.mutate({
@@ -182,6 +211,32 @@ export function TransactionsContent() {
       }));
     if (splits.length === 0) return;
     splitMutation.mutate({ id: splitTarget.id, splits });
+  };
+
+  const handleUpdateTransaction = () => {
+    if (!selectedTransaction) return;
+    if (!editFormData.date || !editFormData.amount) {
+      return; // Basic validation
+    }
+    try {
+      const amountValue = parseFloat(editFormData.amount);
+      if (isNaN(amountValue)) {
+        console.error("Invalid amount value");
+        return;
+      }
+      updateMutation.mutate({
+        id: selectedTransaction.id,
+        updates: {
+          date: new Date(editFormData.date).toISOString(),
+          merchantName: editFormData.merchantName || undefined,
+          name: editFormData.name || "",
+          amount: amountValue,
+          categoryId: editFormData.categoryId || undefined,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+    }
   };
 
   return (
@@ -342,7 +397,26 @@ export function TransactionsContent() {
               {(transactions || []).map((txn) => {
                 const categoryName = txn.categoryId ? categoryLookup.get(txn.categoryId)?.name : "Uncategorized";
                 return (
-                  <TableRow key={txn.id}>
+                  <TableRow 
+                    key={txn.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      try {
+                        setSelectedTransaction(txn);
+                        const dateValue = txn.date ? new Date(txn.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+                        setEditFormData({
+                          date: dateValue,
+                          merchantName: txn.merchantName || "",
+                          name: txn.name || "",
+                          amount: txn.amount !== undefined && txn.amount !== null ? String(txn.amount) : "",
+                          categoryId: txn.categoryId || "",
+                        });
+                        setIsEditOpen(true);
+                      } catch (error) {
+                        console.error("Error opening edit dialog:", error);
+                      }
+                    }}
+                  >
                     <TableCell>{new Date(txn.date).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="font-medium">{txn.merchantName || txn.name}</div>
@@ -369,7 +443,8 @@ export function TransactionsContent() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation(); // Prevent row click from triggering
                           setSplitTarget(txn);
                           setSplitRows([{ categoryId: txn.categoryId || "", amount: String(txn.amount), notes: "" }]);
                         }}
@@ -392,6 +467,94 @@ export function TransactionsContent() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={isEditOpen} onOpenChange={(open) => {
+        setIsEditOpen(open);
+        if (!open) {
+          setSelectedTransaction(null);
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Transaction</DialogTitle>
+            <DialogDescription>
+              Update transaction details.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={editFormData.date}
+                onChange={(event) => setEditFormData({ ...editFormData, date: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Merchant Name</Label>
+              <Input
+                value={editFormData.merchantName}
+                onChange={(event) => setEditFormData({ ...editFormData, merchantName: event.target.value })}
+                placeholder="Store or merchant name"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Input
+                value={editFormData.name}
+                onChange={(event) => setEditFormData({ ...editFormData, name: event.target.value })}
+                placeholder="Transaction description"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Amount</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editFormData.amount}
+                onChange={(event) => setEditFormData({ ...editFormData, amount: event.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Category</Label>
+              <Select
+                value={editFormData.categoryId}
+                onValueChange={(value) => setEditFormData({ ...editFormData, categoryId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Uncategorized</SelectItem>
+                  {(categories || []).map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsEditOpen(false);
+                setSelectedTransaction(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateTransaction}
+              disabled={updateMutation.isPending || !editFormData.date || !editFormData.amount}
+            >
+              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!splitTarget} onOpenChange={(open) => !open && setSplitTarget(null)}>
         <DialogContent className="max-w-lg">
