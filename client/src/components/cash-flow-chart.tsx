@@ -322,6 +322,34 @@ function SankeyChart({ data }: { data: CashFlowData }) {
   const categoryNodes: Array<{ id: string; name: string; amount: number; type: string; y: number; height: number; hasSubcategories: boolean; subcategories?: any[]; categoryId?: string }> = [];
   const subcategoryNodes: Array<{ id: string; name: string; amount: number; y: number; height: number; parentId: string; categoryId?: string }> = [];
   
+  // Calculate dynamic gaps based on content density and available space
+  // More categories/subcategories = smaller gaps, fewer = larger gaps for readability
+  const totalCategories = mainCategories.length;
+  const totalSubcategories = mainCategories.reduce((sum, cat) => {
+    if (cat.hasSubcategories && cat.subcategories) {
+      return sum + cat.subcategories.filter((s: any) => s.amount > 0).length;
+    }
+    return sum;
+  }, 0);
+  
+  // Base gaps that scale with content density
+  // Minimum gaps for readability, but adjust based on how many items we have
+  const baseSubcategoryGap = Math.max(4, Math.min(8, 12 - totalSubcategories * 0.1));
+  const baseCategoryGap = Math.max(6, Math.min(12, 15 - totalCategories * 0.2));
+  
+  // Additional spacing factor based on node size to maintain readability
+  // Smaller nodes need more space, larger nodes can be closer
+  const avgNodeHeight = mainCategories.length > 0 
+    ? mainCategories.reduce((sum, cat) => {
+        const catHeight = totalOutflow > 0 ? (cat.amount / totalOutflow) * col3Height : minBandHeight;
+        return sum + catHeight;
+      }, 0) / mainCategories.length
+    : minBandHeight;
+  const sizeAdjustmentFactor = Math.max(0.8, Math.min(1.5, minBandHeight / Math.max(avgNodeHeight, 1)));
+  
+  const subcategoryGap = baseSubcategoryGap * sizeAdjustmentFactor;
+  const categoryGap = baseCategoryGap * sizeAdjustmentFactor;
+  
   mainCategories.forEach((cat) => {
     const categoryStartY = currentCol4Y;
     
@@ -336,7 +364,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
       let categoryTotalHeight = 0;
       const validSubs = cat.subcategories.filter((s: any) => s.amount > 0);
       
-      validSubs.forEach((sub: any) => {
+      validSubs.forEach((sub: any, index: number) => {
         // Subcategory height proportional to category height
         const subHeight = cat.amount > 0 
           ? (sub.amount / cat.amount) * categoryHeight
@@ -350,11 +378,16 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           parentId: cat.id,
           categoryId: sub.categoryId,
         });
-        currentCol4Y += subHeight + 0.5;
-        categoryTotalHeight += subHeight + 0.5;
+        // Add gap after each subcategory except the last
+        if (index < validSubs.length - 1) {
+          currentCol4Y += subHeight + subcategoryGap;
+          categoryTotalHeight += subHeight + subcategoryGap;
+        } else {
+          currentCol4Y += subHeight;
+          categoryTotalHeight += subHeight;
+        }
       });
-      categoryTotalHeight -= 0.5; // Remove last gap
-      currentCol4Y += 1; // Gap after category group
+      currentCol4Y += categoryGap; // Gap after category group
       
       // Use the actual subcategory total height (should match categoryHeight proportionally)
       categoryNodes.push({
@@ -369,7 +402,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
         y: currentCol4Y,
         height: categoryHeight,
       });
-      currentCol4Y += categoryHeight + 2; // Gap between categories
+      currentCol4Y += categoryHeight + categoryGap; // Gap between categories
     }
   });
   
@@ -399,23 +432,58 @@ function SankeyChart({ data }: { data: CashFlowData }) {
     // Calculate distance for dynamic curve intensity
     const distance = targetX - (sourceX + nodeWidth);
     
+    // Calculate vertical offset between source and target centers
+    // This helps determine how much the flow path needs to curve vertically
+    const sourceCenterY = sourceY + sourceHeight / 2;
+    const targetCenterY = targetY + targetHeight / 2;
+    const verticalOffset = Math.abs(targetCenterY - sourceCenterY);
+    
     // Dynamic curve based on distance - larger gaps need more curve
-    // Minimum curve of 40px, maximum of 60px, scaled by distance
-    const curveIntensity = Math.max(40, Math.min(distance * 0.45, 60));
+    // Increased base curve for better visibility and readability
+    const baseCurveIntensity = Math.max(50, Math.min(distance * 0.55, 80));
+    
+    // Increase curve intensity for larger vertical offsets to create smoother curves
+    // More aggressive adjustment to ensure clear, readable curves
+    const verticalCurveAdjustment = Math.min(verticalOffset * 0.15, 30);
+    const curveIntensity = baseCurveIntensity + verticalCurveAdjustment;
     
     // Control points positioned for smooth curves that create visual space
+    // Increased control point distance for more pronounced curves
     const sourceControlX = sourceX + nodeWidth + curveIntensity * 0.85;
     const targetControlX = targetX - curveIntensity * 0.85;
     
-    // Smooth cubic bezier curves
+    // For vertical offsets, adjust control points to guide the curve smoothly
+    // More aggressive vertical curve factor to ensure paths curve out clearly
+    const verticalCurveFactor = Math.min(verticalOffset * 0.5, 50);
+    let adjustedTopSourceControlY = sourceY;
+    let adjustedTopTargetControlY = targetY;
+    
+    // If target is below source, curve downward; if above, curve upward
+    // Create more pronounced curves for clarity and readability
+    if (targetCenterY > sourceCenterY) {
+      // Target below source - curve flows downward more aggressively
+      adjustedTopSourceControlY = sourceY + verticalCurveFactor * 0.6;
+      adjustedTopTargetControlY = targetY - verticalCurveFactor * 0.6;
+    } else if (targetCenterY < sourceCenterY) {
+      // Target above source - curve flows upward more aggressively
+      adjustedTopSourceControlY = sourceY - verticalCurveFactor * 0.6;
+      adjustedTopTargetControlY = targetY + verticalCurveFactor * 0.6;
+    }
+    
+    // Bottom edge control points - maintain same vertical relationship as top
+    const bottomSourceControlY = (sourceY + sourceHeight) + (adjustedTopSourceControlY - sourceY);
+    const bottomTargetControlY = (targetY + targetHeight) + (adjustedTopTargetControlY - targetY);
+    
+    // Smooth cubic bezier curves with vertical offset handling
+    // Flow paths can now curve smoothly above/below Budget node when categories extend beyond
     return `
       M ${sourceX + nodeWidth} ${sourceY}
-      C ${sourceControlX} ${sourceY},
-        ${targetControlX} ${targetY},
+      C ${sourceControlX} ${adjustedTopSourceControlY},
+        ${targetControlX} ${adjustedTopTargetControlY},
         ${targetX} ${targetY}
       L ${targetX} ${targetY + targetHeight}
-      C ${targetControlX} ${targetY + targetHeight},
-        ${sourceControlX} ${sourceY + sourceHeight},
+      C ${targetControlX} ${bottomTargetControlY},
+        ${sourceControlX} ${bottomSourceControlY},
         ${sourceX + nodeWidth} ${sourceY + sourceHeight}
       Z
     `;
