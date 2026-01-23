@@ -1,5 +1,274 @@
 # Coding Standards for NexusInvest
 
+## Replit Design Patterns & Standards
+
+### Replit-Specific Configuration
+
+#### Vite Plugins
+- **@replit/vite-plugin-cartographer**: Source mapping and debugging support
+- **@replit/vite-plugin-dev-banner**: Development banner for Replit environment
+- **@replit/vite-plugin-runtime-error-modal**: Enhanced error display in Replit
+- **Conditional Loading**: Replit plugins only load in development when `REPL_ID` is defined
+- **Pattern**: Use dynamic imports with conditional checks for Replit-specific features
+
+```typescript
+// Example from vite.config.ts
+...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined
+  ? [
+      await import("@replit/vite-plugin-cartographer").then((m) => m.cartographer()),
+      await import("@replit/vite-plugin-dev-banner").then((m) => m.devBanner()),
+    ]
+  : [])
+```
+
+#### Replit Configuration (.replit)
+- **Modules**: Define required modules (nodejs-20, web, postgresql-16)
+- **Run Command**: `npm run dev` for development
+- **Port Configuration**: Local port 5000, external port 80
+- **Deployment**: Autoscale target with production build command
+- **Workflows**: Define parallel workflow tasks for development
+
+### Component Architecture Patterns
+
+#### Component Structure
+- **Named Exports**: Always use named exports for components (`export function ComponentName`)
+- **TypeScript Interfaces**: Define props interfaces above component
+- **Helper Functions**: Place utility functions (formatCurrency, formatDate) above component
+- **Loading States**: Always include loading skeleton components
+- **Error States**: Handle empty/null data gracefully
+
+**Pattern:**
+```typescript
+// 1. Imports (React, libraries, components, types)
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import type { DataType } from "@shared/schema";
+
+// 2. Helper functions
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(value);
+}
+
+// 3. Component skeleton/loading component
+function ComponentSkeleton() {
+  return <Card>...</Card>;
+}
+
+// 4. Main component
+export function ComponentName({ prop1, prop2 }: ComponentProps) {
+  // Hooks first
+  const { data, isLoading } = useQuery(...);
+  
+  // Early returns for loading/error states
+  if (isLoading) return <ComponentSkeleton />;
+  if (!data) return null;
+  
+  // Main render
+  return <Card>...</Card>;
+}
+```
+
+#### Component Naming
+- **PascalCase** for component names: `PortfolioMetricsCards`, `RecentTransactions`
+- **Descriptive names**: Component name should clearly indicate its purpose
+- **File naming**: Match component name exactly (`portfolio-metrics.tsx` → `PortfolioMetricsCards`)
+
+### UI Component Library Standards
+
+#### Shadcn/UI Pattern
+- **Location**: All UI primitives in `client/src/components/ui/`
+- **Composition**: Use `cn()` utility for className merging
+- **Forward Refs**: All components use `React.forwardRef` for proper ref forwarding
+- **Display Names**: Always set `displayName` for debugging
+- **Type Safety**: Full TypeScript support with proper prop types
+
+**Example Pattern:**
+```typescript
+const Component = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn("base-classes", className)} {...props} />
+  )
+);
+Component.displayName = "Component";
+```
+
+#### Card Component Pattern
+- **Structure**: Card → CardHeader → CardTitle/CardDescription → CardContent
+- **Spacing**: CardHeader uses `p-6`, CardContent uses `p-6 pt-0`
+- **Styling**: Use `rounded-xl border bg-card` for consistent card appearance
+- **Semantic HTML**: Use proper semantic elements
+
+### Styling Standards (Replit Design System)
+
+#### Tailwind CSS Configuration
+- **Design Tokens**: Use CSS variables for colors (`hsl(var(--background))`)
+- **Color System**: Semantic color tokens (background, foreground, card, primary, destructive, chart-1-5)
+- **Border Radius**: Custom values (lg: 9px, md: 6px, sm: 3px)
+- **Dark Mode**: Class-based dark mode (`darkMode: ["class"]`)
+
+#### Color Usage Patterns
+- **Charts**: Use `chart-1` through `chart-5` for data visualization
+- **Status Colors**: 
+  - Positive/Income: `text-chart-1` (green)
+  - Negative/Expense: `text-destructive` (red)
+  - Neutral: `text-muted-foreground`
+- **Cards**: `bg-card`, `text-card-foreground`, `border-card-border`
+- **Semantic Colors**: Always use semantic tokens, never hardcoded colors
+
+#### Spacing System
+- **Consistent Units**: Use Tailwind spacing scale (2, 4, 6, 8, 12, 16, 24)
+- **Component Padding**: `p-6` for cards, `p-4` for compact components
+- **Gaps**: `gap-4` for grids, `gap-6` for sections
+- **Content Spacing**: `space-y-3` or `space-y-4` for lists
+
+#### Typography Patterns
+- **Numbers**: Always use `tabular-nums` for financial data alignment
+- **Headings**: `text-2xl font-semibold` for card titles
+- **Body**: `text-sm` or `text-base` for descriptions
+- **Labels**: `text-xs text-muted-foreground` for metadata
+
+### Data Fetching Patterns
+
+#### React Query Usage
+- **Query Keys**: Use descriptive paths (`["/api/transactions"]`, `["/api/portfolio/metrics"]`)
+- **Loading States**: Always provide loading skeletons
+- **Error Handling**: Graceful error states with user-friendly messages
+- **Query Functions**: Use `queryFn` for custom fetch logic when needed
+
+**Pattern:**
+```typescript
+const { data, isLoading } = useQuery<DataType>({
+  queryKey: ["/api/endpoint"],
+  // Optional: custom queryFn for complex requests
+  queryFn: async () => {
+    const response = await fetch("/api/endpoint", { credentials: "include" });
+    if (!response.ok) throw new Error("Failed to fetch");
+    return response.json();
+  },
+});
+```
+
+### File Organization Standards
+
+#### Directory Structure
+```
+client/src/
+├── components/          # Reusable UI components
+│   ├── ui/             # Shadcn/UI primitives
+│   └── [feature].tsx   # Feature-specific components
+├── pages/              # Page-level components
+├── lib/                # Utilities and helpers
+└── App.tsx             # Root component with routing
+
+server/
+├── routes.ts           # API route definitions
+├── storage.ts          # Data persistence layer
+└── [feature].ts        # Feature-specific server logic
+
+shared/
+└── schema.ts           # Shared TypeScript types and Zod schemas
+```
+
+#### Path Aliases
+- **@/**: Points to `client/src/`
+- **@shared/**: Points to `shared/`
+- **@assets/**: Points to `attached_assets/`
+- Always use path aliases instead of relative imports when possible
+
+### Type Safety Patterns
+
+#### Schema Definition
+- **Zod Schemas**: Define validation schemas in `shared/schema.ts`
+- **Drizzle ORM**: Table definitions alongside Zod schemas
+- **Type Inference**: Use `z.infer<typeof schema>` for TypeScript types
+- **Shared Types**: Export types from shared schema for consistency
+
+**Pattern:**
+```typescript
+// Zod schema
+export const entitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  // ...
+});
+
+// Type inference
+export type Entity = z.infer<typeof entitySchema>;
+
+// Drizzle table (if using database)
+export const entities = pgTable("entities", {
+  id: varchar("id").primaryKey(),
+  name: text("name").notNull(),
+  // ...
+});
+```
+
+### Error Handling Patterns
+
+#### Server-Side
+- **Try-Catch**: Always wrap async operations
+- **Error Responses**: Return consistent JSON error format
+- **Status Codes**: Use appropriate HTTP status codes
+- **Logging**: Log errors server-side for debugging
+
+#### Client-Side
+- **Query Errors**: React Query handles errors automatically
+- **User Feedback**: Show user-friendly error messages
+- **Fallback UI**: Provide fallback content for error states
+- **Loading States**: Always show loading indicators
+
+### Performance Patterns
+
+#### Component Optimization
+- **Memoization**: Use `useMemo` for expensive calculations
+- **Lazy Loading**: Use dynamic imports for large components
+- **Skeleton Loading**: Show skeletons instead of blank screens
+- **Pagination**: Limit data displayed (e.g., top 5, recent 10)
+
+#### Data Processing
+- **Client-Side Filtering**: Filter/sort in `useMemo` hooks
+- **Efficient Queries**: Only fetch needed data
+- **Caching**: Leverage React Query's caching
+
+### Accessibility Standards
+
+#### ARIA & Semantic HTML
+- **Semantic Elements**: Use proper HTML5 semantic elements
+- **ARIA Labels**: Add labels for screen readers on interactive elements
+- **Keyboard Navigation**: Ensure all interactive elements are keyboard accessible
+- **Focus States**: Visible focus indicators on all focusable elements
+
+#### Data Tables
+- **Tabular Numbers**: Use `tabular-nums` for number alignment
+- **Table Structure**: Proper `<thead>`, `<tbody>`, `<th>`, `<td>` structure
+- **Sortable Headers**: Indicate sortable columns clearly
+
+### Chart & Visualization Patterns
+
+#### Recharts Integration
+- **ResponsiveContainer**: Always wrap charts in ResponsiveContainer
+- **Consistent Heights**: Use fixed heights (`h-[200px]`, `h-[175px]`) for consistency
+- **Color Tokens**: Use chart color tokens (`chart-1` through `chart-5`)
+- **Tooltips**: Custom tooltip formatters for currency/percentage formatting
+- **Legends**: Consistent legend styling and positioning
+
+**Pattern:**
+```typescript
+<ResponsiveContainer width="100%" height="100%">
+  <LineChart data={data}>
+    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+    <XAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
+    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+    <Line dataKey="value" stroke="hsl(var(--chart-1))" />
+  </LineChart>
+</ResponsiveContainer>
+```
+
 ## Development Workflow
 
 ### Communication and Clarification
@@ -199,3 +468,61 @@ import type { Holding } from "@shared/schema";
 - Include environment variable setup
 - Document API endpoints
 - Include troubleshooting section
+
+## Replit Deployment Standards
+
+### Environment Configuration
+- **Port**: Always use PORT environment variable (defaults to 5000)
+- **Database**: Use DATABASE_URL for PostgreSQL connections
+- **Secrets**: Store sensitive data in Replit Secrets, never in code
+- **Environment Detection**: Check `process.env.REPL_ID` for Replit-specific features
+
+### Build & Deployment
+- **Build Command**: `npm run build` for production builds
+- **Start Command**: `node dist/index.cjs` for production
+- **Development**: `npm run dev` uses `tsx watch` for auto-restart
+- **Static Assets**: Serve from `dist/public` in production
+
+### Development Experience
+- **Hot Reload**: Vite HMR for client-side changes (no restart needed)
+- **Auto-Restart**: Server automatically restarts on server code changes
+- **Error Overlays**: Replit runtime error modal for better error visibility
+- **Source Maps**: Cartographer plugin for enhanced debugging
+
+## Code Review Checklist (Replit Standards)
+
+### Component Review
+- [ ] Uses named export pattern
+- [ ] Includes loading skeleton component
+- [ ] Handles empty/null data states
+- [ ] Uses semantic color tokens (not hardcoded colors)
+- [ ] Includes proper TypeScript types
+- [ ] Uses path aliases (@/, @shared/)
+- [ ] Follows component structure pattern (helpers → skeleton → main component)
+
+### Styling Review
+- [ ] Uses Tailwind utility classes
+- [ ] Uses `cn()` utility for className merging
+- [ ] Uses semantic color tokens (chart-1, destructive, etc.)
+- [ ] Includes `tabular-nums` for financial data
+- [ ] Responsive design tested (mobile, tablet, desktop)
+- [ ] Consistent spacing using Tailwind scale
+
+### Data Fetching Review
+- [ ] Uses React Query for all API calls
+- [ ] Proper query keys following path pattern
+- [ ] Loading states implemented
+- [ ] Error handling included
+- [ ] Type-safe data fetching
+
+### Type Safety Review
+- [ ] All components have TypeScript types
+- [ ] Shared types used from @shared/schema
+- [ ] No `any` types (use `unknown` if needed)
+- [ ] Proper interface definitions for props
+
+### Performance Review
+- [ ] Expensive calculations use `useMemo`
+- [ ] Large lists are paginated or limited
+- [ ] Images/assets are optimized
+- [ ] No unnecessary re-renders

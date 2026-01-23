@@ -1761,47 +1761,57 @@ export class MemStorage implements IStorage {
       const quote = await fetchCurrentQuote(searchResult.symbol);
       const historicalData = await fetchHistoricalData(searchResult.symbol, timeframe);
 
-      if (!quote || !historicalData || historicalData.length === 0) {
-        // Fallback to holdings if API fails
-        const holdings = await this.getHoldings();
-        const holding = holdings.find(
-          (h) => h.ticker.toUpperCase() === searchResult.symbol.toUpperCase()
-        );
-
-        if (holding) {
-          const fallbackData = this.generateHistoricalData(
-            holding.currentPrice,
-            holding.growthRate30d,
-            timeframe
-          );
-
-          return {
-            ticker: holding.ticker,
-            name: holding.name,
-            currentPrice: holding.currentPrice,
-            sector: holding.sector,
-            industry: holding.industry,
-            historicalData: fallbackData,
-          };
-        }
-
-        return null;
-      }
-
       // Find sector/industry from holdings if available
       const holdings = await this.getHoldings();
       const holding = holdings.find(
         (h) => h.ticker.toUpperCase() === searchResult.symbol.toUpperCase()
       );
 
-      return {
-        ticker: searchResult.symbol,
-        name: searchResult.name,
-        currentPrice: quote.price,
-        sector: holding?.sector,
-        industry: holding?.industry,
-        historicalData,
-      };
+      // If we have a valid quote, return the data even without historical data
+      if (quote && quote.price > 0) {
+        // Use real historical data if available, otherwise generate simulated data
+        let finalHistoricalData = historicalData;
+        if (!historicalData || historicalData.length === 0) {
+          console.log(`[Storage] No historical data for ${searchResult.symbol}, generating simulated data based on current price`);
+          // Generate simulated historical data based on current price
+          finalHistoricalData = this.generateHistoricalData(
+            quote.price,
+            holding?.growthRate30d || 0, // Use holding growth rate or 0% if not available
+            timeframe
+          );
+        }
+
+        return {
+          ticker: searchResult.symbol,
+          name: searchResult.name,
+          currentPrice: quote.price,
+          sector: holding?.sector,
+          industry: holding?.industry,
+          historicalData: finalHistoricalData,
+        };
+      }
+
+      // If quote failed, try to use holding data as fallback
+      if (holding) {
+        const fallbackData = this.generateHistoricalData(
+          holding.currentPrice,
+          holding.growthRate30d,
+          timeframe
+        );
+
+        return {
+          ticker: holding.ticker,
+          name: holding.name,
+          currentPrice: holding.currentPrice,
+          sector: holding.sector,
+          industry: holding.industry,
+          historicalData: fallbackData,
+        };
+      }
+
+      // No quote data and not in holdings
+      console.log(`[Storage] No quote data available for ${searchResult.symbol} and not in holdings`);
+      return null;
     } catch (error) {
       console.error("Error fetching stock data:", error);
       // Fallback to holdings
@@ -1947,16 +1957,13 @@ export class MemStorage implements IStorage {
       const basePrice = startPrice + (endPrice - startPrice) * progress;
       
       // Add realistic volatility
-      const volatility = 0.01; // 1% volatility
+      const volatility = 0.02; // 2% volatility for more realistic stock movement
       const randomFactor = 1 + (Math.random() - 0.5) * volatility * 2;
       const price = basePrice * randomFactor;
 
-      // Calculate percentage change from start price (indexed to 0)
-      const percentChange = ((price - startPrice) / startPrice) * 100;
-
       historicalData.push({
         date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        price: Math.round(percentChange * 100) / 100,
+        price: Math.round(price * 100) / 100, // Return actual price, not percentage
       });
     }
 

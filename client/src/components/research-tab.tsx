@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,13 @@ import { StockChart } from "@/components/stock-chart";
 import type { StockData, IndexData } from "@shared/schema";
 
 type Timeframe = "1D" | "5D" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "MAX";
+
+interface StockSuggestion {
+  symbol: string;
+  name: string;
+  exchange?: string;
+  quoteType?: string;
+}
 
 interface FinancialData {
   overview: {
@@ -121,6 +128,9 @@ export function ResearchTab() {
   const [ticker, setTicker] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>("1M");
   const [selectedIndices, setSelectedIndices] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<StockSuggestion[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const { data: stockData, isLoading: stockLoading, error: stockError } = useQuery<StockData>({
     queryKey: ["/api/research/stock", ticker, timeframe],
@@ -183,6 +193,7 @@ export function ResearchTab() {
   const handleSearch = () => {
     if (searchQuery.trim()) {
       setTicker(searchQuery.trim().toUpperCase());
+      setShowSuggestions(false);
     }
   };
 
@@ -190,6 +201,47 @@ export function ResearchTab() {
     if (e.key === "Enter") {
       handleSearch();
     }
+  };
+
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setIsSuggesting(false);
+      return;
+    }
+
+    setIsSuggesting(true);
+    const handle = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/research/search?query=${encodeURIComponent(trimmed)}`,
+          { credentials: "include" },
+        );
+        if (!response.ok) {
+          setSuggestions([]);
+          return;
+        }
+        const data = (await response.json()) as StockSuggestion[];
+        setSuggestions(data);
+        setShowSuggestions(true);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setIsSuggesting(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  const handleSuggestionSelect = (suggestion: StockSuggestion) => {
+    const symbol = suggestion.symbol?.toUpperCase() || "";
+    if (!symbol) return;
+    setSearchQuery(symbol);
+    setTicker(symbol);
+    setShowSuggestions(false);
   };
 
   const toggleIndex = (indexSymbol: string) => {
@@ -208,13 +260,46 @@ export function ResearchTab() {
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
-            <Input
-              placeholder="Enter ticker symbol or company name (e.g., AAPL, Apple)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyPress={handleKeyPress}
-              className="flex-1"
-            />
+            <div className="relative flex-1">
+              <Input
+                placeholder="Enter ticker symbol or company name (e.g., AAPL, Apple)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={handleKeyPress}
+                onFocus={() => {
+                  if (suggestions.length > 0) {
+                    setShowSuggestions(true);
+                  }
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowSuggestions(false), 150);
+                }}
+                className="w-full"
+              />
+              {showSuggestions && (
+                <div className="absolute z-20 mt-2 w-full rounded-md border bg-background shadow-md">
+                  {isSuggesting ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+                  ) : suggestions.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">No matches found</div>
+                  ) : (
+                    <div className="max-h-64 overflow-auto py-1">
+                      {suggestions.map((suggestion) => (
+                        <button
+                          key={`${suggestion.symbol}-${suggestion.name}`}
+                          type="button"
+                          onClick={() => handleSuggestionSelect(suggestion)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                        >
+                          <span className="font-medium">{suggestion.symbol}</span>
+                          <span className="ml-2 truncate text-muted-foreground">{suggestion.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <Button onClick={handleSearch} disabled={!searchQuery.trim()}>
               <Search className="h-4 w-4 mr-2" />
               Search
@@ -241,9 +326,27 @@ export function ResearchTab() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-muted-foreground">Current Price</p>
-                  <p className="text-2xl font-bold tabular-nums">
-                    ${stockData.currentPrice.toFixed(2)}
-                  </p>
+                  <div className="flex items-baseline gap-2 justify-end">
+                    <p className="text-2xl font-bold tabular-nums">
+                      ${stockData.currentPrice.toFixed(2)}
+                    </p>
+                    {stockData.historicalData.length > 0 && (() => {
+                      const startPrice = stockData.historicalData[0].price;
+                      const change = stockData.currentPrice - startPrice;
+                      const changePercent = startPrice > 0 ? (change / startPrice) * 100 : 0;
+                      const isPositive = change >= 0;
+                      return (
+                        <div className="flex flex-col items-end">
+                          <p className={`text-sm font-semibold tabular-nums ${isPositive ? "text-chart-1" : "text-destructive"}`}>
+                            {isPositive ? "+" : ""}${change.toFixed(2)}
+                          </p>
+                          <p className={`text-xs tabular-nums ${isPositive ? "text-chart-1" : "text-destructive"}`}>
+                            {isPositive ? "+" : ""}{changePercent.toFixed(2)}%
+                          </p>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             </CardHeader>

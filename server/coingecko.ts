@@ -293,6 +293,44 @@ export async function searchCoins(
 }
 
 /**
+ * Fetches price history for a cryptocurrency
+ * @param coinId CoinGecko coin ID (e.g., "bitcoin")
+ * @param days Number of days of history (1, 7, 30, 90, 365, max)
+ * @returns Array of { date: string, price: number }
+ */
+export async function getPriceHistory(
+  coinId: string,
+  days: number = 30
+): Promise<Array<{ date: string; price: number }>> {
+  const cacheKey = `price_history_${coinId}_${days}`;
+  const cached = getFromCache<Array<{ date: string; price: number }>>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    await rateLimit();
+    
+    const url = `${COINGECKO_BASE_URL}/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`CoinGecko API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const priceHistory = data.prices?.map(([timestamp, price]: [number, number]) => ({
+      date: new Date(timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      price: price,
+    })) || [];
+    
+    setCache(cacheKey, priceHistory);
+    return priceHistory;
+  } catch (error) {
+    console.error("Error fetching price history:", error);
+    return [];
+  }
+}
+
+/**
  * Updates crypto asset prices from CoinGecko
  * @param assets Array of crypto assets with symbols
  * @returns Assets with updated prices

@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import type { DebtPlan, DebtItem } from "@shared/schema";
 import { DebtPayoffGraph } from "@/components/debt-payoff-graph";
+import { DebtHistoryChart } from "@/components/debt-history-chart";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -233,6 +234,9 @@ export function DebtPayoffContent() {
               </CardHeader>
             </Card>
           )}
+          
+          {/* Debt History Chart */}
+          <DebtHistoryChart debtPlans={debtPlans} />
         </>
       )}
     </div>

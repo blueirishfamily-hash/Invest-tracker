@@ -48,6 +48,26 @@ export function StockChart({ stockData, indexData, timeframe, isLoading }: Stock
     return dataPoint;
   });
 
+  // Calculate min and max values across all data series for y-axis domain
+  const allValues: number[] = [];
+  chartData.forEach((point) => {
+    Object.values(point).forEach((value) => {
+      if (typeof value === "number" && !isNaN(value)) {
+        allValues.push(value);
+      }
+    });
+  });
+
+  let yAxisDomain: [number, number] | undefined;
+  if (allValues.length > 0) {
+    const minValue = Math.min(...allValues);
+    const maxValue = Math.max(...allValues);
+    // Add padding (5% of range) to top and bottom for better visualization
+    const range = maxValue - minValue;
+    const padding = range * 0.05;
+    yAxisDomain = [minValue - padding, maxValue + padding];
+  }
+
   // Determine chart colors - distinct colors for better differentiation
   const colors = {
     stock: "#3b82f6",      // Blue - for searched stock
@@ -81,7 +101,8 @@ export function StockChart({ stockData, indexData, timeframe, isLoading }: Stock
               <YAxis
                 tick={{ fill: "hsl(var(--muted-foreground))" }}
                 axisLine={{ stroke: "hsl(var(--border))" }}
-                tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(0)}%`}
+                tickFormatter={(value) => `$${value.toFixed(2)}`}
+                domain={yAxisDomain || ["auto", "auto"]}
               />
               <Tooltip
                 contentStyle={{
@@ -91,7 +112,7 @@ export function StockChart({ stockData, indexData, timeframe, isLoading }: Stock
                 }}
                 labelStyle={{ color: "hsl(var(--foreground))" }}
                 formatter={(value: number, name: string) => [
-                  `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`,
+                  `$${value.toFixed(2)}`,
                   name === "stock" ? stockData.ticker : indexNames[name] || name,
                 ]}
               />

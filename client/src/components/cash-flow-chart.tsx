@@ -455,18 +455,18 @@ function SankeyChart({ data }: { data: CashFlowData }) {
     const verticalOffset = Math.abs(targetCenterY - sourceCenterY);
     
     // Dynamic curve based on distance - larger gaps need more curve
-    // Increased base curve for better visibility and readability
-    const baseCurveIntensity = Math.max(50, Math.min(distance * 0.55, 80));
+    // Adjusted for smoother, more gradual curves
+    const baseCurveIntensity = Math.max(60, Math.min(distance * 0.5, 100));
     
     // Increase curve intensity for larger vertical offsets to create smoother curves
-    // More aggressive adjustment to ensure clear, readable curves
-    const verticalCurveAdjustment = Math.min(verticalOffset * 0.15, 30);
+    // Slightly increased adjustment for smoother transitions
+    const verticalCurveAdjustment = Math.min(verticalOffset * 0.2, 35);
     const curveIntensity = baseCurveIntensity + verticalCurveAdjustment;
     
     // Control points positioned for smooth curves that create visual space
-    // Increased control point distance for more pronounced curves
-    const sourceControlX = sourceX + nodeWidth + curveIntensity * 0.85;
-    const targetControlX = targetX - curveIntensity * 0.85;
+    // Reduced control point distance for smoother, more gradual curves
+    const sourceControlX = sourceX + nodeWidth + curveIntensity * 0.7;
+    const targetControlX = targetX - curveIntensity * 0.7;
     
     // For vertical offsets, adjust control points to guide the curve smoothly
     // More aggressive vertical curve factor to ensure paths curve out clearly
@@ -475,15 +475,15 @@ function SankeyChart({ data }: { data: CashFlowData }) {
     let adjustedTopTargetControlY = targetY;
     
     // If target is below source, curve downward; if above, curve upward
-    // Create more pronounced curves for clarity and readability
+    // Use smoother vertical transitions for more elegant curves
     if (targetCenterY > sourceCenterY) {
-      // Target below source - curve flows downward more aggressively
-      adjustedTopSourceControlY = sourceY + verticalCurveFactor * 0.6;
-      adjustedTopTargetControlY = targetY - verticalCurveFactor * 0.6;
+      // Target below source - curve flows downward smoothly
+      adjustedTopSourceControlY = sourceY + verticalCurveFactor * 0.75;
+      adjustedTopTargetControlY = targetY - verticalCurveFactor * 0.75;
     } else if (targetCenterY < sourceCenterY) {
-      // Target above source - curve flows upward more aggressively
-      adjustedTopSourceControlY = sourceY - verticalCurveFactor * 0.6;
-      adjustedTopTargetControlY = targetY + verticalCurveFactor * 0.6;
+      // Target above source - curve flows upward smoothly
+      adjustedTopSourceControlY = sourceY - verticalCurveFactor * 0.75;
+      adjustedTopTargetControlY = targetY + verticalCurveFactor * 0.75;
     }
     
     // Bottom edge control points - maintain same vertical relationship as top

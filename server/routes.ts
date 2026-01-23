@@ -1358,6 +1358,77 @@ export async function registerRoutes(
     }
   });
 
+  // Crypto portfolio performance endpoint
+  app.get("/api/crypto/performance", async (_req, res) => {
+    try {
+      const assets = await storage.getCryptoAssets();
+      const totalValue = assets.reduce((sum, a) => sum + a.currentValue, 0);
+      const totalCostBasis = assets.reduce((sum, a) => sum + a.costBasis, 0);
+      const totalGainLoss = totalValue - totalCostBasis;
+      const totalGainLossPercent = totalCostBasis > 0 ? (totalGainLoss / totalCostBasis) * 100 : 0;
+      
+      // Calculate 24h/7d/30d performance (simplified - would need historical data)
+      const { updateCryptoAssetPrices } = await import("./coingecko");
+      const updatedAssets = await updateCryptoAssetPrices(assets);
+      
+      res.json({
+        totalValue,
+        totalCostBasis,
+        totalGainLoss,
+        totalGainLossPercent,
+        assetCount: assets.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to calculate crypto performance" });
+    }
+  });
+
+  // Crypto allocation endpoint
+  app.get("/api/crypto/allocation", async (_req, res) => {
+    try {
+      const assets = await storage.getCryptoAssets();
+      const allocation = assets.map(asset => ({
+        symbol: asset.symbol,
+        name: asset.name,
+        value: asset.currentValue,
+        percentage: 0, // Will be calculated client-side
+      }));
+      
+      const totalValue = allocation.reduce((sum, a) => sum + a.value, 0);
+      const allocationWithPercent = allocation.map(a => ({
+        ...a,
+        percentage: totalValue > 0 ? (a.value / totalValue) * 100 : 0,
+      }));
+      
+      res.json(allocationWithPercent.sort((a, b) => b.value - a.value));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to calculate crypto allocation" });
+    }
+  });
+
+  // Crypto price history endpoint
+  app.get("/api/crypto/price-history/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const { days } = req.query;
+      const daysParam = days ? parseInt(days as string) : 30;
+      
+      const { symbolToId, getPriceHistory } = await import("./coingecko");
+      const coinId = await symbolToId(symbol);
+      
+      if (!coinId) {
+        return res.status(404).json({ error: "Cryptocurrency not found" });
+      }
+      
+      const priceHistory = await getPriceHistory(coinId, daysParam);
+      res.json(priceHistory);
+    } catch (error: any) {
+      console.error("Error fetching price history:", error);
+      // Return empty array on error rather than failing
+      res.json([]);
+    }
+  });
+
   // Crypto market data endpoint
   app.get("/api/crypto/market", async (req, res) => {
     try {

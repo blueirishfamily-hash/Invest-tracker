@@ -10,6 +10,11 @@
  * - 5 API requests per minute
  */
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+// @ts-ignore - request is a CommonJS module
+const request = require('request');
+
 const ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query";
 const API_KEY = process.env.ALPHA_VANTAGE_API_KEY || "";
 
@@ -84,7 +89,7 @@ async function checkRateLimit(): Promise<void> {
  * Make API request to Alpha Vantage
  */
 async function apiRequest(params: Record<string, string>): Promise<any> {
-  if (!API_KEY) {
+  if (!API_KEY || API_KEY.trim().length === 0) {
     throw new Error("ALPHA_VANTAGE_API_KEY is not configured");
   }
   
@@ -99,6 +104,11 @@ async function apiRequest(params: Record<string, string>): Promise<any> {
   
   try {
     const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
     const data = await response.json();
     
     // Check for rate limit response
@@ -109,13 +119,17 @@ async function apiRequest(params: Record<string, string>): Promise<any> {
     
     // Check for error messages
     if (data["Error Message"]) {
-      throw new Error(data["Error Message"]);
+      const errorMsg = data["Error Message"];
+      console.error("Alpha Vantage error:", errorMsg);
+      throw new Error(errorMsg);
     }
     
-    // Check for informational messages
+    // Check for informational messages (often indicates API key issues)
     if (data["Information"] && typeof data.Information === "string") {
-      console.warn("Alpha Vantage info:", data.Information);
-      throw new Error(data.Information);
+      const infoMsg = data.Information;
+      console.warn("Alpha Vantage info:", infoMsg);
+      // Don't throw for informational messages, just log them
+      // Some endpoints return info messages that aren't errors
     }
     
     return data;
@@ -236,9 +250,54 @@ export async function symbolSearch(keywords: string): Promise<Array<{
   const cached = getCached(cacheKey);
   if (cached) return cached;
   
-  const data = await apiRequest({
-    function: "SYMBOL_SEARCH",
-    keywords: keywords,
+  // Check rate limit before making request
+  await checkRateLimit();
+  
+  if (!API_KEY || API_KEY.trim().length === 0) {
+    throw new Error("ALPHA_VANTAGE_API_KEY is not configured");
+  }
+  
+  const url = `${ALPHA_VANTAGE_BASE_URL}?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(keywords)}&apikey=${API_KEY}`;
+  
+  // Wrap request in Promise for async/await compatibility
+  const data = await new Promise<any>((resolve, reject) => {
+    request.get({
+      url: url,
+      json: true,
+      headers: {'User-Agent': 'request'}
+    }, (err: any, res: any, body: any) => {
+      if (err) {
+        console.error('Alpha Vantage API error:', err);
+        reject(new Error(`Alpha Vantage API error: ${err.message || "Unknown error"}`));
+      } else if (res.statusCode !== 200) {
+        console.error('Alpha Vantage API status:', res.statusCode);
+        reject(new Error(`HTTP error! status: ${res.statusCode}`));
+      } else {
+        // Check for rate limit response
+        if (body.Note && typeof body.Note === "string" && body.Note.includes("call frequency")) {
+          console.warn("Alpha Vantage rate limit reached:", body.Note);
+          reject(new Error("Alpha Vantage API rate limit exceeded. Please try again later."));
+          return;
+        }
+        
+        // Check for error messages
+        if (body["Error Message"]) {
+          const errorMsg = body["Error Message"];
+          console.error("Alpha Vantage error:", errorMsg);
+          reject(new Error(errorMsg));
+          return;
+        }
+        
+        // Check for informational messages (often indicates API key issues)
+        if (body["Information"] && typeof body.Information === "string") {
+          const infoMsg = body.Information;
+          console.warn("Alpha Vantage info:", infoMsg);
+          // Don't throw for informational messages, just log them
+        }
+        
+        resolve(body);
+      }
+    });
   });
   
   const matches = data.bestMatches || [];

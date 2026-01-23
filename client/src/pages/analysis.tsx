@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign, Gauge, Calendar, Newspaper, Search } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign, Gauge, Calendar, Newspaper, Search, Bitcoin } from "lucide-react";
 import { SEO } from "@/components/seo";
 import type { SectorAnalysis, BreakdownAnalysis, PortfolioMetrics } from "@shared/schema";
 import { RiskIndicatorsContent } from "@/pages/risk-indicators";
 import { DividendsContent } from "@/pages/dividends";
 import { NewsTab } from "@/components/news-tab";
 import { ResearchTab } from "@/components/research-tab";
+import { CryptoTab } from "@/components/crypto-tab";
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -153,7 +154,7 @@ export default function Analysis() {
       </div>
 
       <Tabs defaultValue="breakdown" className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-6">
+        <TabsList className="grid w-full max-w-3xl grid-cols-7">
           <TabsTrigger value="breakdown" className="flex items-center gap-2">
             <PieChart className="h-4 w-4" />
             Breakdown
@@ -169,6 +170,10 @@ export default function Analysis() {
           <TabsTrigger value="risk" className="flex items-center gap-2">
             <Gauge className="h-4 w-4" />
             Risk Indicators
+          </TabsTrigger>
+          <TabsTrigger value="crypto" className="flex items-center gap-2">
+            <Bitcoin className="h-4 w-4" />
+            Crypto
           </TabsTrigger>
           <TabsTrigger value="news" className="flex items-center gap-2">
             <Newspaper className="h-4 w-4" />
@@ -515,6 +520,10 @@ export default function Analysis() {
         
         <TabsContent value="risk">
           <RiskIndicatorsContent />
+        </TabsContent>
+        
+        <TabsContent value="crypto">
+          <CryptoTab />
         </TabsContent>
         
         <TabsContent value="news">
