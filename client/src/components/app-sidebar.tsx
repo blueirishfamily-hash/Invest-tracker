@@ -16,7 +16,6 @@ import {
   TrendingUp,
   AlertTriangle,
   Settings,
-  Newspaper,
   Link2,
   DollarSign,
   Gauge,
@@ -63,11 +62,6 @@ const navItems = [
     title: "Bubble Watch",
     url: "/bubble-watch",
     icon: AlertTriangle,
-  },
-  {
-    title: "News & Research",
-    url: "/news",
-    icon: Newspaper,
   },
   {
     title: "Goals",

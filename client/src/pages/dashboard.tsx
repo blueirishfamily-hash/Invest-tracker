@@ -3,23 +3,16 @@ import { useQuery } from "@tanstack/react-query";
 import { PortfolioMetricsCards } from "@/components/portfolio-metrics";
 import { HoldingsTable } from "@/components/holdings-table";
 import { BenchmarkChart } from "@/components/benchmark-chart";
-import { IndustryChart } from "@/components/industry-chart";
-import { BubbleWatchCompact } from "@/components/bubble-watch";
-import { TopStocks } from "@/components/top-stocks";
+import { BudgetPieChart } from "@/components/budget-pie-chart";
+import { GoalProgression } from "@/components/goal-progression";
+import { RecentTransactions } from "@/components/recent-transactions";
 import { SEO } from "@/components/seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { TrendingUp, Home, Bitcoin, Gem, Briefcase, DollarSign } from "lucide-react";
 import { Link } from "wouter";
-import type { Holding, PortfolioMetrics, BenchmarkData, IndustryAnalysis, BubbleWarning, NetWorthSummary } from "@shared/schema";
+import type { Holding, PortfolioMetrics, BenchmarkData, NetWorthSummary } from "@shared/schema";
 
 type Timeframe = "1D" | "5D" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "MAX";
 
@@ -60,13 +53,6 @@ export default function Dashboard() {
     },
   });
 
-  const { data: industries, isLoading: industriesLoading } = useQuery<IndustryAnalysis[]>({
-    queryKey: ["/api/industry-analysis"],
-  });
-
-  const { data: bubbleWarnings, isLoading: bubbleLoading } = useQuery<BubbleWarning[]>({
-    queryKey: ["/api/bubble-watch"],
-  });
 
   const { data: netWorth, isLoading: netWorthLoading } = useQuery<NetWorthSummary>({
     queryKey: ["/api/net-worth"],
@@ -97,8 +83,6 @@ export default function Dashboard() {
           Track your investment performance and market insights
         </p>
       </div>
-
-      <BubbleWatchCompact warnings={bubbleWarnings} isLoading={bubbleLoading} />
 
       {/* Net Worth Summary Card */}
       <Card>
@@ -162,43 +146,29 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <PortfolioMetricsCards metrics={metrics} isLoading={metricsLoading} />
-
-      <TopStocks timeframe={timeframe} />
-
-      <div className="flex items-center justify-end gap-2 mb-2">
-        <label htmlFor="timeframe-select" className="text-sm text-muted-foreground whitespace-nowrap">
-          Timeframe:
-        </label>
-        <Select value={timeframe} onValueChange={(value) => setTimeframe(value as Timeframe)}>
-          <SelectTrigger id="timeframe-select" className="w-[150px]">
-            <SelectValue placeholder="Select timeframe" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="1D">1 Day</SelectItem>
-            <SelectItem value="5D">5 Days</SelectItem>
-            <SelectItem value="1M">1 Month</SelectItem>
-            <SelectItem value="3M">3 Months</SelectItem>
-            <SelectItem value="6M">6 Months</SelectItem>
-            <SelectItem value="YTD">YTD</SelectItem>
-            <SelectItem value="1Y">1 Year</SelectItem>
-            <SelectItem value="5Y">5 Years</SelectItem>
-            <SelectItem value="MAX">Max</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <BenchmarkChart 
-          data={benchmark} 
-          chartData={benchmarkChart}
-          isLoading={benchmarkLoading || benchmarkChartLoading} 
-          timeframe={timeframe} 
-        />
-        <IndustryChart data={industries} isLoading={industriesLoading} />
+        <div className="space-y-6">
+          <PortfolioMetricsCards metrics={metrics} holdings={holdings} isLoading={metricsLoading} />
+          <BenchmarkChart 
+            data={benchmark} 
+            chartData={benchmarkChart}
+            isLoading={benchmarkLoading || benchmarkChartLoading} 
+            timeframe={timeframe} 
+          />
+          <HoldingsTable holdings={holdings} isLoading={holdingsLoading} timeframe={timeframe} />
+        </div>
+        <div className="space-y-6">
+          <GoalProgression />
+          <div className="flex gap-6">
+            <div className="w-1/2">
+              <BudgetPieChart />
+            </div>
+            <div className="w-1/2">
+              <RecentTransactions />
+            </div>
+          </div>
+        </div>
       </div>
-
-      <HoldingsTable holdings={holdings} isLoading={holdingsLoading} timeframe={timeframe} />
     </div>
   );
 }

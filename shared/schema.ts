@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, real, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, real, integer, timestamp, boolean, jsonb, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -16,6 +16,349 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// ============================================
+// DRIZZLE TABLE DEFINITIONS
+// ============================================
+
+// Holdings Table
+export const holdings = pgTable("holdings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticker: varchar("ticker").notNull(),
+  name: text("name").notNull(),
+  quantity: real("quantity").notNull(),
+  costBasis: real("cost_basis").notNull(),
+  currentPrice: real("current_price").notNull(),
+  currentValue: real("current_value").notNull(),
+  growthRate30d: real("growth_rate_30d").notNull(),
+  sector: text("sector").notNull(),
+  industry: text("industry").notNull(),
+  account: text("account"),
+  currency: varchar("currency").default("USD"),
+  market: text("market"),
+  region: text("region"),
+  assetType: text("asset_type"),
+});
+
+// Financial Institutions Table
+export const financialInstitutions = pgTable("financial_institutions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  logoUrl: text("logo_url"),
+  primaryColor: varchar("primary_color"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Financial Accounts Table
+const accountTypePgEnum = pgEnum("account_type", ["checking", "savings", "credit", "loan", "bnpl", "investment", "cash", "other"]);
+const syncStatusPgEnum = pgEnum("sync_status", ["mock", "connected", "disconnected", "error"]);
+
+export const financialAccounts = pgTable("financial_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  institutionId: varchar("institution_id").references(() => financialInstitutions.id),
+  name: text("name").notNull(),
+  type: accountTypePgEnum("type").notNull(),
+  subtype: text("subtype"),
+  mask: varchar("mask"),
+  balance: real("balance").notNull(),
+  available: real("available"),
+  creditLimit: real("credit_limit"),
+  interestRate: real("interest_rate"),
+  currency: varchar("currency").default("USD").notNull(),
+  isShared: boolean("is_shared").default(false).notNull(),
+  syncStatus: syncStatusPgEnum("sync_status").default("mock").notNull(),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Transaction Categories Table
+const categoryTypeEnum = pgEnum("category_type", ["income", "expense", "transfer"]);
+
+export const transactionCategories = pgTable("transaction_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: categoryTypeEnum("type").notNull(),
+  color: varchar("color"),
+  icon: varchar("icon"),
+  isSystem: boolean("is_system").default(false).notNull(),
+  parentId: varchar("parent_id").references(() => transactionCategories.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Transaction Tags Table
+export const transactionTags = pgTable("transaction_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  color: varchar("color"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Transactions Table
+const transactionDirectionEnum = pgEnum("transaction_direction", ["debit", "credit"]);
+
+export const transactions = pgTable("transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  accountId: varchar("account_id").notNull().references(() => financialAccounts.id),
+  date: timestamp("date").notNull(),
+  name: text("name").notNull(),
+  merchantName: text("merchant_name"),
+  amount: real("amount").notNull(),
+  direction: transactionDirectionEnum("direction").notNull(),
+  categoryId: varchar("category_id").references(() => transactionCategories.id),
+  appliedRuleId: varchar("applied_rule_id"),
+  tags: jsonb("tags").$type<string[]>().default([]),
+  isPending: boolean("is_pending").default(false).notNull(),
+  isSplit: boolean("is_split").default(false).notNull(),
+  splits: jsonb("splits").$type<Array<{ id: string; transactionId: string; categoryId?: string; amount: number; notes?: string }>>(),
+  notes: text("notes"),
+  isVerified: boolean("is_verified").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Bills Table
+const billFrequencyPgEnum = pgEnum("bill_frequency", ["weekly", "biweekly", "monthly", "quarterly", "yearly", "one-time"]);
+const billStatusPgEnum = pgEnum("bill_status", ["scheduled", "paid", "overdue", "canceled"]);
+
+export const bills = pgTable("bills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  amount: real("amount").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  frequency: billFrequencyPgEnum("frequency").notNull(),
+  categoryId: varchar("category_id").references(() => transactionCategories.id),
+  accountId: varchar("account_id").references(() => financialAccounts.id),
+  isAutoPay: boolean("is_auto_pay").default(false).notNull(),
+  reminderDaysBefore: jsonb("reminder_days_before").$type<number[]>().default([3, 1]),
+  status: billStatusPgEnum("status").default("scheduled").notNull(),
+  lastPaidDate: timestamp("last_paid_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Subscriptions Table
+const subscriptionCadencePgEnum = pgEnum("subscription_cadence", ["weekly", "monthly", "quarterly", "yearly"]);
+const subscriptionStatusPgEnum = pgEnum("subscription_status", ["active", "paused", "canceled"]);
+
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  amount: real("amount").notNull(),
+  cadence: subscriptionCadencePgEnum("cadence").notNull(),
+  nextBillingDate: timestamp("next_billing_date").notNull(),
+  lastBillingDate: timestamp("last_billing_date"),
+  categoryId: varchar("category_id").references(() => transactionCategories.id),
+  paymentAccountId: varchar("payment_account_id").references(() => financialAccounts.id),
+  status: subscriptionStatusPgEnum("status").default("active").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Sinking Funds Table
+const sinkingFundStatusEnum = pgEnum("sinking_fund_status", ["active", "paused", "completed"]);
+
+export const sinkingFunds = pgTable("sinking_funds", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  targetAmount: real("target_amount").notNull(),
+  currentAmount: real("current_amount").default(0).notNull(),
+  monthlyContribution: real("monthly_contribution").default(0).notNull(),
+  dueDate: timestamp("due_date"),
+  categoryId: varchar("category_id").references(() => transactionCategories.id),
+  status: sinkingFundStatusEnum("status").default("active").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Debt Plans Table
+const debtMethodEnum = pgEnum("debt_method", ["snowball", "avalanche"]);
+
+export const debtPlans = pgTable("debt_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  method: debtMethodEnum("method").notNull(),
+  extraPayment: real("extra_payment").default(0).notNull(),
+  debts: jsonb("debts").$type<Array<{ id: string; name: string; balance: number; interestRate: number; minimumPayment: number; dueDate?: string; accountId?: string }>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Cash Flow Scenarios Table
+const scenarioTypeEnum = pgEnum("scenario_type", ["income", "expense", "debt"]);
+
+export const cashFlowScenarios = pgTable("cash_flow_scenarios", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: scenarioTypeEnum("type").notNull(),
+  amount: real("amount").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Category Rules Table
+export const categoryRules = pgTable("category_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pattern: text("pattern").notNull(),
+  categoryId: varchar("category_id").notNull().references(() => transactionCategories.id),
+  confidence: real("confidence").notNull(),
+  acceptedCount: integer("accepted_count").default(0).notNull(),
+  rejectedCount: integer("rejected_count").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Real Estate Table
+const propertyTypeEnum = pgEnum("property_type", ["Primary Residence", "Vacation Home", "Rental", "Commercial", "Land", "Other"]);
+
+export const realEstate = pgTable("real_estate", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyAddress: text("property_address").notNull(),
+  propertyName: text("property_name"),
+  propertyType: propertyTypeEnum("property_type").notNull(),
+  estimatedValue: real("estimated_value").notNull(),
+  purchasePrice: real("purchase_price").notNull(),
+  purchaseDate: timestamp("purchase_date").notNull(),
+  mortgageBalance: real("mortgage_balance"),
+  monthlyPayment: real("monthly_payment"),
+  interestRate: real("interest_rate"),
+  lender: text("lender"),
+  rentalIncome: real("rental_income"),
+  notes: text("notes"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Crypto Assets Table
+export const cryptoAssets = pgTable("crypto_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  symbol: varchar("symbol").notNull(),
+  name: text("name").notNull(),
+  quantity: real("quantity").notNull(),
+  costBasis: real("cost_basis").notNull(),
+  currentPrice: real("current_price").notNull(),
+  currentValue: real("current_value").notNull(),
+  walletAddress: text("wallet_address"),
+  walletName: text("wallet_name"),
+  exchange: text("exchange"),
+  isNFT: boolean("is_nft").default(false).notNull(),
+  nftDetails: jsonb("nft_details").$type<{ collection?: string; tokenId?: string; imageUrl?: string }>(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Collectibles Table
+const collectibleCategoryEnum = pgEnum("collectible_category", ["Art", "Watches", "Cars", "Wine", "Jewelry", "Coins", "Stamps", "Sports Memorabilia", "Antiques", "Other"]);
+const conditionEnum = pgEnum("condition", ["Mint", "Excellent", "Good", "Fair", "Poor"]);
+
+export const collectibles = pgTable("collectibles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  category: collectibleCategoryEnum("category").notNull(),
+  description: text("description"),
+  estimatedValue: real("estimated_value").notNull(),
+  purchasePrice: real("purchase_price").notNull(),
+  purchaseDate: timestamp("purchase_date").notNull(),
+  condition: conditionEnum("condition"),
+  appraisalValue: real("appraisal_value"),
+  appraisalDate: timestamp("appraisal_date"),
+  appraiser: text("appraiser"),
+  location: text("location"),
+  insured: boolean("insured").default(false).notNull(),
+  insuranceValue: real("insurance_value"),
+  imageUrl: text("image_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Alternative Investments Table
+const altInvestmentTypeEnum = pgEnum("alt_investment_type", ["Private Equity", "Hedge Fund", "Venture Capital", "Angel Investment", "Real Estate Fund", "Other"]);
+
+export const alternativeInvestments = pgTable("alternative_investments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: altInvestmentTypeEnum("type").notNull(),
+  manager: text("manager"),
+  committedCapital: real("committed_capital").notNull(),
+  calledCapital: real("called_capital").notNull(),
+  currentNAV: real("current_nav").notNull(),
+  distributions: real("distributions").default(0).notNull(),
+  vintage: varchar("vintage"),
+  investmentDate: timestamp("investment_date").notNull(),
+  expectedMaturity: timestamp("expected_maturity"),
+  irr: real("irr"),
+  multiple: real("multiple"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Plaid Accounts Table
+export const plaidAccounts = pgTable("plaid_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  accessToken: text("access_token").notNull(),
+  itemId: varchar("item_id").notNull(),
+  institutionId: varchar("institution_id").notNull(),
+  institutionName: text("institution_name").notNull(),
+  accountId: varchar("account_id").notNull(),
+  accountName: text("account_name").notNull(),
+  accountType: text("account_type"),
+  accountSubtype: text("account_subtype"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// User Preferences Table
+export const userPreferences = pgTable("user_preferences", {
+  userId: varchar("user_id").primaryKey().notNull(),
+  portfolioStrategy: varchar("portfolio_strategy").default("Moderate").notNull(),
+  currentAge: integer("current_age").default(30).notNull(),
+  retirementAge: integer("retirement_age").default(65).notNull(),
+  displayCurrency: varchar("display_currency").default("USD").notNull(),
+  themePreference: varchar("theme_preference").default("system").notNull(),
+  emailNotifications: boolean("email_notifications").default(true).notNull(),
+  dateFormat: varchar("date_format").default("MM/DD/YYYY").notNull(),
+  numberFormat: varchar("number_format").default("en-US").notNull(),
+  cashFlowChartType: varchar("cash_flow_chart_type").default("pie").notNull(),
+});
+
+// Security Settings Table
+export const securitySettings = pgTable("security_settings", {
+  userId: varchar("user_id").primaryKey().notNull(),
+  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+  biometricEnabled: boolean("biometric_enabled").default(false).notNull(),
+  encryptionEnabled: boolean("encryption_enabled").default(true).notNull(),
+  lastUpdated: timestamp("last_updated"),
+});
+
+// Anomalies Table
+const anomalyTypeEnum = pgEnum("anomaly_type", ["spike", "recurring_increase", "duplicate", "new_merchant"]);
+const severityEnum = pgEnum("severity", ["low", "medium", "high"]);
+
+export const anomalies = pgTable("anomalies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: anomalyTypeEnum("type").notNull(),
+  transactionId: varchar("transaction_id").notNull().references(() => transactions.id),
+  description: text("description").notNull(),
+  severity: severityEnum("severity").default("low").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // Portfolio Holdings Schema
 export const holdingsSchema = z.object({

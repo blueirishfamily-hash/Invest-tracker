@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign, Gauge, Calendar } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, AlertCircle, Maximize2, Minimize2, ChevronDown, ChevronUp, PieChart, DollarSign, Gauge, Calendar, Newspaper, Search } from "lucide-react";
 import { SEO } from "@/components/seo";
 import type { SectorAnalysis, BreakdownAnalysis, PortfolioMetrics } from "@shared/schema";
 import { RiskIndicatorsContent } from "@/pages/risk-indicators";
 import { DividendsContent } from "@/pages/dividends";
+import { NewsTab } from "@/components/news-tab";
+import { ResearchTab } from "@/components/research-tab";
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -62,15 +64,17 @@ export default function Analysis() {
   });
 
   const [expandedView, setExpandedView] = useState<"distribution" | "performance" | null>(null);
-  const [categorySelectionExpanded, setCategorySelectionExpanded] = useState(true);
+  const [categorySelectionExpanded, setCategorySelectionExpanded] = useState(false);
 
-  // Update selected categories when breakdown data changes - select all by default
+  // Update selected categories when breakdown data changes - select top 5 largest by default
   useEffect(() => {
     if (currentData && currentData.length > 0 && selectedCategories.length === 0) {
-      // Auto-select all categories by default
-      const allCategories = currentData
+      // Auto-select top 5 largest categories by default (sorted by percentage/totalValue)
+      const sortedCategories = [...currentData]
+        .sort((a, b) => b.percentage - a.percentage) // Sort by percentage descending
+        .slice(0, 5) // Take top 5
         .map(item => "sector" in item ? item.sector : item.category);
-      setSelectedCategories(allCategories);
+      setSelectedCategories(sortedCategories);
     }
   }, [currentData, selectedCategories.length]);
 
@@ -149,7 +153,7 @@ export default function Analysis() {
       </div>
 
       <Tabs defaultValue="breakdown" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-4">
+        <TabsList className="grid w-full max-w-2xl grid-cols-6">
           <TabsTrigger value="breakdown" className="flex items-center gap-2">
             <PieChart className="h-4 w-4" />
             Breakdown
@@ -165,6 +169,14 @@ export default function Analysis() {
           <TabsTrigger value="risk" className="flex items-center gap-2">
             <Gauge className="h-4 w-4" />
             Risk Indicators
+          </TabsTrigger>
+          <TabsTrigger value="news" className="flex items-center gap-2">
+            <Newspaper className="h-4 w-4" />
+            News
+          </TabsTrigger>
+          <TabsTrigger value="research" className="flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Research
           </TabsTrigger>
         </TabsList>
 
@@ -358,46 +370,52 @@ export default function Analysis() {
                     )}
                   </Button>
                 </CardTitle>
-                <CardDescription>Select categories to compare performance</CardDescription>
+                <CardDescription>
+                  {expandedView === "performance" 
+                    ? "Select categories to compare performance" 
+                    : "Showing top 5 largest categories"}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="mb-4" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-between"
-                    onClick={() => setCategorySelectionExpanded(!categorySelectionExpanded)}
-                  >
-                    <span>Select {categoryLabel}s</span>
-                    {categorySelectionExpanded ? (
-                      <ChevronUp className="h-4 w-4" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4" />
+                {expandedView === "performance" && (
+                  <div className="mb-4" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-between"
+                      onClick={() => setCategorySelectionExpanded(!categorySelectionExpanded)}
+                    >
+                      <span>Select {categoryLabel}s</span>
+                      {categorySelectionExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                    {categorySelectionExpanded && (
+                      <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                        {currentData.map((item) => {
+                          const categoryName = "sector" in item ? item.sector : item.category;
+                          return (
+                            <div key={categoryName} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`category-${categoryName}`}
+                                checked={selectedCategories.includes(categoryName)}
+                                onCheckedChange={() => handleCategoryToggle(categoryName)}
+                              />
+                              <Label
+                                htmlFor={`category-${categoryName}`}
+                                className="text-sm font-normal cursor-pointer flex-1"
+                              >
+                                {categoryName} ({item.percentage.toFixed(1)}%)
+                              </Label>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
-                  </Button>
-                  {categorySelectionExpanded && (
-                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
-                      {currentData.map((item) => {
-                        const categoryName = "sector" in item ? item.sector : item.category;
-                        return (
-                          <div key={categoryName} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={`category-${categoryName}`}
-                              checked={selectedCategories.includes(categoryName)}
-                              onCheckedChange={() => handleCategoryToggle(categoryName)}
-                            />
-                            <Label
-                              htmlFor={`category-${categoryName}`}
-                              className="text-sm font-normal cursor-pointer flex-1"
-                            >
-                              {categoryName} ({item.percentage.toFixed(1)}%)
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
                 <div onClick={(e) => e.stopPropagation()}>
                   <BenchmarkChart 
                     categoryData={categoryPerformance}
@@ -497,6 +515,14 @@ export default function Analysis() {
         
         <TabsContent value="risk">
           <RiskIndicatorsContent />
+        </TabsContent>
+        
+        <TabsContent value="news">
+          <NewsTab />
+        </TabsContent>
+        
+        <TabsContent value="research">
+          <ResearchTab />
         </TabsContent>
       </Tabs>
     </div>

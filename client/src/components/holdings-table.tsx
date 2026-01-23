@@ -101,6 +101,9 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
     );
   }
 
+  // Limit to top 5 holdings for compact view
+  const displayHoldings = holdings.slice(0, 5);
+
   return (
     <Card>
       <CardHeader>
@@ -121,7 +124,7 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
               </TableRow>
             </TableHeader>
             <TableBody>
-              {holdings.map((holding) => {
+              {displayHoldings.map((holding) => {
                 const isPositive = holding.growthRate30d >= 0;
                 const logoUrl = getCompanyLogoUrl(holding.ticker, holding.name);
                 return (
@@ -136,6 +139,11 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
             </TableBody>
           </Table>
         </div>
+        {holdings.length > 5 && (
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            Showing top 5 of {holdings.length} holdings
+          </div>
+        )}
       </CardContent>
     </Card>
   );

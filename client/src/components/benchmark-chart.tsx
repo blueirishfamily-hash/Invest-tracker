@@ -29,7 +29,7 @@ interface BenchmarkChartProps {
 
 function ChartSkeleton() {
   return (
-    <div className="h-[400px] flex items-center justify-center">
+    <div className="h-[200px] flex items-center justify-center">
       <div className="w-full h-full bg-muted animate-pulse rounded" />
     </div>
   );
@@ -271,7 +271,7 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
           </CardHeader>
         )}
         <CardContent>
-          <div className="h-[400px]">
+          <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={mergedData}
@@ -366,7 +366,7 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[400px] flex items-center justify-center text-muted-foreground">
+          <div className="h-[200px] flex items-center justify-center text-muted-foreground">
             No benchmark data available
           </div>
         </CardContent>
@@ -420,7 +420,7 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[400px]">
+        <div className="h-[200px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={displayChartData}

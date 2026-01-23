@@ -12,7 +12,6 @@ import Dashboard from "@/pages/dashboard";
 import Holdings from "@/pages/holdings";
 import Analysis from "@/pages/analysis";
 import BubbleWatchPage from "@/pages/bubble-watch";
-import NewsResearch from "@/pages/news-research";
 import Accounts from "@/pages/accounts";
 import Dividends from "@/pages/dividends";
 import RiskIndicators from "@/pages/risk-indicators";
@@ -38,8 +37,6 @@ function Router() {
       <Route path="/holdings" component={Holdings} />
       <Route path="/analysis" component={Analysis} />
       <Route path="/bubble-watch" component={BubbleWatchPage} />
-      <Route path="/news" component={NewsResearch} />
-      <Route path="/research" component={NewsResearch} />
       <Route path="/accounts" component={Accounts} />
       <Route path="/dividends" component={Dividends} />
       <Route path="/risk-indicators" component={RiskIndicators} />

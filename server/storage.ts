@@ -74,6 +74,31 @@ import {
   searchStock,
 } from "./market-data";
 import { updateCryptoAssetPrices } from "./coingecko";
+import { db } from "./db";
+import { eq, and, gte, lte, desc } from "drizzle-orm";
+import {
+  users,
+  holdings,
+  financialInstitutions,
+  financialAccounts,
+  transactionCategories,
+  transactionTags,
+  transactions,
+  bills,
+  subscriptions,
+  sinkingFunds,
+  debtPlans,
+  cashFlowScenarios,
+  categoryRules,
+  realEstate,
+  cryptoAssets,
+  collectibles,
+  alternativeInvestments,
+  plaidAccounts,
+  userPreferences,
+  securitySettings,
+  anomalies,
+} from "@shared/schema";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -434,9 +459,19 @@ export class MemStorage implements IStorage {
 
   async getPortfolioMetrics(): Promise<PortfolioMetrics> {
     const holdings = await this.getHoldings();
+    const cryptoAssets = await this.getCryptoAssets();
 
-    const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
-    const totalCostBasis = holdings.reduce((sum, h) => sum + h.costBasis, 0);
+    // Calculate from holdings
+    const holdingsValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    const holdingsCostBasis = holdings.reduce((sum, h) => sum + h.costBasis, 0);
+    
+    // Calculate from crypto
+    const cryptoValue = cryptoAssets.reduce((sum, c) => sum + c.currentValue, 0);
+    const cryptoCostBasis = cryptoAssets.reduce((sum, c) => sum + c.costBasis, 0);
+    
+    // Combined totals
+    const totalValue = holdingsValue + cryptoValue;
+    const totalCostBasis = holdingsCostBasis + cryptoCostBasis;
     const totalReturn = totalValue - totalCostBasis;
     const totalReturnPercent =
       totalCostBasis > 0 ? (totalReturn / totalCostBasis) * 100 : 0;
@@ -454,11 +489,32 @@ export class MemStorage implements IStorage {
 
   async getBenchmarkData(timeframe: string = "1M"): Promise<BenchmarkData> {
     const holdings = await this.getHoldings();
+    const cryptoAssets = await this.getCryptoAssets();
 
-    const portfolioGrowth =
-      holdings.length > 0
-        ? holdings.reduce((sum, h) => sum + h.growthRate30d, 0) / holdings.length
-        : 0;
+    // Calculate weighted average growth from holdings and crypto
+    const holdingsTotal = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    const cryptoTotal = cryptoAssets.reduce((sum, c) => sum + c.currentValue, 0);
+    const totalPortfolioValue = holdingsTotal + cryptoTotal;
+
+    let portfolioGrowth = 0;
+    if (totalPortfolioValue > 0) {
+      // Weight holdings growth by their value
+      const holdingsWeightedGrowth = holdings.reduce((sum, h) => {
+        const weight = h.currentValue / totalPortfolioValue;
+        return sum + (h.growthRate30d * weight);
+      }, 0);
+      
+      // For crypto, approximate growth from current vs cost basis (30-day approximation)
+      const cryptoWeightedGrowth = cryptoAssets.reduce((sum, c) => {
+        const weight = c.currentValue / totalPortfolioValue;
+        const cryptoGrowth = c.costBasis > 0 ? ((c.currentValue - c.costBasis) / c.costBasis) * 100 : 0;
+        // Approximate 30-day growth (this is a simplification)
+        const crypto30dGrowth = cryptoGrowth / 12; // Rough monthly approximation
+        return sum + (crypto30dGrowth * weight);
+      }, 0);
+      
+      portfolioGrowth = holdingsWeightedGrowth + cryptoWeightedGrowth;
+    }
 
     // Fetch real S&P 500 data
     let spyGrowth = 3.8;
@@ -2730,4 +2786,1209 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// ============================================
+// DATABASE STORAGE IMPLEMENTATION
+// ============================================
+
+export class DatabaseStorage implements IStorage {
+  constructor() {
+    if (!db) {
+      throw new Error("Database connection not available. DATABASE_URL must be set.");
+    }
+  }
+
+  private ensureDb() {
+    if (!db) {
+      throw new Error("Database connection not available");
+    }
+    return db;
+  }
+
+  // User methods
+  async getUser(id: string): Promise<User | undefined> {
+    const result = await this.ensureDb().select().from(users).where(eq(users.id, id)).limit(1);
+    return result[0] as User | undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await this.ensureDb().select().from(users).where(eq(users.username, username)).limit(1);
+    return result[0] as User | undefined;
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const result = await this.ensureDb().insert(users).values(user).returning();
+    return result[0] as User;
+  }
+
+  // Holdings methods
+  async getHoldings(): Promise<Holding[]> {
+    const results = await this.ensureDb().select().from(holdings);
+    // Update prices asynchronously
+    this.updateHoldingsPrices(results as Holding[]).catch(console.error);
+    return results as Holding[];
+  }
+
+  private async updateHoldingsPrices(holdings: Holding[]): Promise<void> {
+    for (const holding of holdings) {
+      try {
+        const quote = await fetchCurrentQuote(holding.ticker);
+        if (quote && quote.price !== holding.currentPrice) {
+          const priceChange = ((quote.price - holding.currentPrice) / holding.currentPrice) * 100;
+          await this.ensureDb().update(holdings)
+            .set({
+              currentPrice: quote.price,
+              currentValue: holding.quantity * quote.price,
+              growthRate30d: priceChange,
+            })
+            .where(eq(holdings.id, holding.id));
+        }
+      } catch (error) {
+        console.error(`Error updating price for ${holding.ticker}:`, error);
+      }
+    }
+  }
+
+  async getHolding(id: string): Promise<Holding | undefined> {
+    const result = await this.ensureDb().select().from(holdings).where(eq(holdings.id, id)).limit(1);
+    return result[0] as Holding | undefined;
+  }
+
+  async createHolding(holding: InsertHolding): Promise<Holding> {
+    const result = await this.ensureDb().insert(holdings).values(holding).returning();
+    return result[0] as Holding;
+  }
+
+  async updateHolding(id: string, updates: Partial<InsertHolding>): Promise<Holding | undefined> {
+    const result = await this.ensureDb().update(holdings)
+      .set(updates)
+      .where(eq(holdings.id, id))
+      .returning();
+    return result[0] as Holding | undefined;
+  }
+
+  async deleteHolding(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(holdings).where(eq(holdings.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Portfolio metrics (calculated, same as MemStorage)
+  async getPortfolioMetrics(): Promise<PortfolioMetrics> {
+    const holdings = await this.getHoldings();
+    const cryptoAssets = await this.getCryptoAssets();
+
+    // Calculate from holdings
+    const holdingsValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    const holdingsCostBasis = holdings.reduce((sum, h) => sum + h.costBasis, 0);
+    
+    // Calculate from crypto
+    const cryptoValue = cryptoAssets.reduce((sum, c) => sum + c.currentValue, 0);
+    const cryptoCostBasis = cryptoAssets.reduce((sum, c) => sum + c.costBasis, 0);
+    
+    // Combined totals
+    const totalValue = holdingsValue + cryptoValue;
+    const totalCostBasis = holdingsCostBasis + cryptoCostBasis;
+    const totalReturn = totalValue - totalCostBasis;
+    const totalReturnPercent = totalCostBasis > 0 ? (totalReturn / totalCostBasis) * 100 : 0;
+    const timeWeightedReturn = totalCostBasis > 0 ? ((totalValue / totalCostBasis) - 1) * 100 : 0;
+    return { totalValue, totalCostBasis, totalReturn, totalReturnPercent, timeWeightedReturn };
+  }
+
+  async getBenchmarkData(timeframe: string = "1M"): Promise<BenchmarkData> {
+    const holdings = await this.getHoldings();
+    const cryptoAssets = await this.getCryptoAssets();
+
+    // Calculate weighted average growth from holdings and crypto
+    const holdingsTotal = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    const cryptoTotal = cryptoAssets.reduce((sum, c) => sum + c.currentValue, 0);
+    const totalPortfolioValue = holdingsTotal + cryptoTotal;
+
+    let portfolioGrowth = 0;
+    if (totalPortfolioValue > 0) {
+      // Weight holdings growth by their value
+      const holdingsWeightedGrowth = holdings.reduce((sum, h) => {
+        const weight = h.currentValue / totalPortfolioValue;
+        return sum + (h.growthRate30d * weight);
+      }, 0);
+      
+      // For crypto, approximate growth from current vs cost basis (30-day approximation)
+      const cryptoWeightedGrowth = cryptoAssets.reduce((sum, c) => {
+        const weight = c.currentValue / totalPortfolioValue;
+        const cryptoGrowth = c.costBasis > 0 ? ((c.currentValue - c.costBasis) / c.costBasis) * 100 : 0;
+        // Approximate 30-day growth (this is a simplification)
+        const crypto30dGrowth = cryptoGrowth / 12; // Rough monthly approximation
+        return sum + (crypto30dGrowth * weight);
+      }, 0);
+      
+      portfolioGrowth = holdingsWeightedGrowth + cryptoWeightedGrowth;
+    }
+    let spyGrowth = 3.8;
+    let spyCurrentPrice = 512.45;
+    try {
+      const spyQuote = await fetchCurrentQuote("SPY");
+      if (spyQuote) spyCurrentPrice = spyQuote.price;
+      const spyHistorical = await fetchHistoricalData("SPY", timeframe);
+      if (spyHistorical && spyHistorical.length >= 2) {
+        const startPrice = spyHistorical[0].price;
+        const endPrice = spyHistorical[spyHistorical.length - 1].price;
+        spyGrowth = ((endPrice - startPrice) / startPrice) * 100;
+      }
+    } catch (error) {
+      console.error("Error fetching S&P 500 data:", error);
+    }
+    return { portfolioGrowth, spyGrowth, spyCurrentPrice };
+  }
+
+  async getBenchmarkChartData(timeframe: string): Promise<BenchmarkChartData> {
+    // Same implementation as MemStorage
+    const memStorage = new MemStorage();
+    return memStorage.getBenchmarkChartData(timeframe);
+  }
+
+  async getIndustryAnalysis(): Promise<IndustryAnalysis[]> {
+    const memStorage = new MemStorage();
+    return memStorage.getIndustryAnalysis();
+  }
+
+  async getBubbleWarnings(): Promise<BubbleWarning[]> {
+    const memStorage = new MemStorage();
+    return memStorage.getBubbleWarnings();
+  }
+
+  async getNewsArticles(): Promise<NewsArticle[]> {
+    const memStorage = new MemStorage();
+    return memStorage.getNewsArticles();
+  }
+
+  async getStockData(query: string, timeframe: string): Promise<StockData | null> {
+    const memStorage = new MemStorage();
+    return memStorage.getStockData(query, timeframe);
+  }
+
+  async getIndexData(indices: string[], timeframe: string): Promise<IndexData[]> {
+    const memStorage = new MemStorage();
+    return memStorage.getIndexData(indices, timeframe);
+  }
+
+  // Plaid Accounts
+  async createPlaidAccount(account: InsertPlaidAccount): Promise<PlaidAccount> {
+    const result = await this.ensureDb().insert(plaidAccounts).values(account).returning();
+    return result[0] as PlaidAccount;
+  }
+
+  async getPlaidAccounts(userId: string): Promise<PlaidAccount[]> {
+    return await this.ensureDb().select().from(plaidAccounts).where(eq(plaidAccounts.userId, userId));
+  }
+
+  async getPlaidAccount(id: string): Promise<PlaidAccount | undefined> {
+    const result = await this.ensureDb().select().from(plaidAccounts).where(eq(plaidAccounts.id, id)).limit(1);
+    return result[0] as PlaidAccount | undefined;
+  }
+
+  async updatePlaidAccount(id: string, updates: Partial<InsertPlaidAccount>): Promise<PlaidAccount | undefined> {
+    const result = await this.ensureDb().update(plaidAccounts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(plaidAccounts.id, id))
+      .returning();
+    return result[0] as PlaidAccount | undefined;
+  }
+
+  async deletePlaidAccount(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(plaidAccounts).where(eq(plaidAccounts.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Real Estate
+  async getRealEstateProperties(): Promise<RealEstate[]> {
+    const results = await this.ensureDb().select().from(realEstate);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+    })) as RealEstate[];
+  }
+
+  async getRealEstateProperty(id: string): Promise<RealEstate | undefined> {
+    const result = await this.ensureDb().select().from(realEstate).where(eq(realEstate.id, id)).limit(1);
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+    } as RealEstate;
+  }
+
+  async createRealEstateProperty(property: InsertRealEstate): Promise<RealEstate> {
+    const result = await this.ensureDb().insert(realEstate).values({
+      ...property,
+      purchaseDate: new Date(property.purchaseDate),
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+    } as RealEstate;
+  }
+
+  async updateRealEstateProperty(id: string, updates: Partial<InsertRealEstate>): Promise<RealEstate | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.purchaseDate) updateData.purchaseDate = new Date(updates.purchaseDate);
+    const result = await this.ensureDb().update(realEstate)
+      .set(updateData)
+      .where(eq(realEstate.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+    } as RealEstate;
+  }
+
+  async deleteRealEstateProperty(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(realEstate).where(eq(realEstate.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Crypto Assets
+  async getCryptoAssets(): Promise<CryptoAsset[]> {
+    const results = await this.ensureDb().select().from(cryptoAssets);
+    // Update prices
+    try {
+      const updated = await updateCryptoAssetPrices(results as CryptoAsset[]);
+      for (const asset of updated) {
+        await this.ensureDb().update(cryptoAssets)
+          .set({ currentPrice: asset.currentPrice, currentValue: asset.currentValue, updatedAt: new Date() })
+          .where(eq(cryptoAssets.id, asset.id));
+      }
+      return updated;
+    } catch (error) {
+      console.error("Error updating crypto prices:", error);
+    }
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as CryptoAsset[];
+  }
+
+  async getCryptoAsset(id: string): Promise<CryptoAsset | undefined> {
+    const result = await this.ensureDb().select().from(cryptoAssets).where(eq(cryptoAssets.id, id)).limit(1);
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CryptoAsset;
+  }
+
+  async createCryptoAsset(asset: InsertCryptoAsset): Promise<CryptoAsset> {
+    const calculatedValue = asset.quantity * asset.currentPrice;
+    const result = await this.ensureDb().insert(cryptoAssets).values({
+      ...asset,
+      currentValue: calculatedValue,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CryptoAsset;
+  }
+
+  async updateCryptoAsset(id: string, updates: Partial<InsertCryptoAsset>): Promise<CryptoAsset | undefined> {
+    const existing = await this.getCryptoAsset(id);
+    if (!existing) return undefined;
+    const quantity = updates.quantity ?? existing.quantity;
+    const currentPrice = updates.currentPrice ?? existing.currentPrice;
+    const calculatedValue = quantity * currentPrice;
+    const result = await this.ensureDb().update(cryptoAssets)
+      .set({
+        ...updates,
+        currentValue: calculatedValue,
+        updatedAt: new Date(),
+      })
+      .where(eq(cryptoAssets.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CryptoAsset;
+  }
+
+  async deleteCryptoAsset(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(cryptoAssets).where(eq(cryptoAssets.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Collectibles
+  async getCollectibles(): Promise<Collectible[]> {
+    const results = await this.ensureDb().select().from(collectibles);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      appraisalDate: r.appraisalDate?.toISOString(),
+    })) as Collectible[];
+  }
+
+  async getCollectible(id: string): Promise<Collectible | undefined> {
+    const result = await this.ensureDb().select().from(collectibles).where(eq(collectibles.id, id)).limit(1);
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      appraisalDate: r.appraisalDate?.toISOString(),
+    } as Collectible;
+  }
+
+  async createCollectible(collectible: InsertCollectible): Promise<Collectible> {
+    const result = await this.ensureDb().insert(collectibles).values({
+      ...collectible,
+      purchaseDate: new Date(collectible.purchaseDate),
+      appraisalDate: collectible.appraisalDate ? new Date(collectible.appraisalDate) : undefined,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      appraisalDate: r.appraisalDate?.toISOString(),
+    } as Collectible;
+  }
+
+  async updateCollectible(id: string, updates: Partial<InsertCollectible>): Promise<Collectible | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.purchaseDate) updateData.purchaseDate = new Date(updates.purchaseDate);
+    if (updates.appraisalDate) updateData.appraisalDate = new Date(updates.appraisalDate);
+    const result = await this.ensureDb().update(collectibles)
+      .set(updateData)
+      .where(eq(collectibles.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      purchaseDate: r.purchaseDate.toISOString(),
+      appraisalDate: r.appraisalDate?.toISOString(),
+    } as Collectible;
+  }
+
+  async deleteCollectible(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(collectibles).where(eq(collectibles.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Alternative Investments
+  async getAlternativeInvestments(): Promise<AlternativeInvestment[]> {
+    const results = await this.ensureDb().select().from(alternativeInvestments);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      investmentDate: r.investmentDate.toISOString(),
+      expectedMaturity: r.expectedMaturity?.toISOString(),
+    })) as AlternativeInvestment[];
+  }
+
+  async getAlternativeInvestment(id: string): Promise<AlternativeInvestment | undefined> {
+    const result = await this.ensureDb().select().from(alternativeInvestments).where(eq(alternativeInvestments.id, id)).limit(1);
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      investmentDate: r.investmentDate.toISOString(),
+      expectedMaturity: r.expectedMaturity?.toISOString(),
+    } as AlternativeInvestment;
+  }
+
+  async createAlternativeInvestment(investment: InsertAlternativeInvestment): Promise<AlternativeInvestment> {
+    const result = await this.ensureDb().insert(alternativeInvestments).values({
+      ...investment,
+      investmentDate: new Date(investment.investmentDate),
+      expectedMaturity: investment.expectedMaturity ? new Date(investment.expectedMaturity) : undefined,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      investmentDate: r.investmentDate.toISOString(),
+      expectedMaturity: r.expectedMaturity?.toISOString(),
+    } as AlternativeInvestment;
+  }
+
+  async updateAlternativeInvestment(id: string, updates: Partial<InsertAlternativeInvestment>): Promise<AlternativeInvestment | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.investmentDate) updateData.investmentDate = new Date(updates.investmentDate);
+    if (updates.expectedMaturity) updateData.expectedMaturity = new Date(updates.expectedMaturity);
+    const result = await this.ensureDb().update(alternativeInvestments)
+      .set(updateData)
+      .where(eq(alternativeInvestments.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      investmentDate: r.investmentDate.toISOString(),
+      expectedMaturity: r.expectedMaturity?.toISOString(),
+    } as AlternativeInvestment;
+  }
+
+  async deleteAlternativeInvestment(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(alternativeInvestments).where(eq(alternativeInvestments.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // User Preferences
+  async getUserPreferences(userId: string): Promise<UserPreferences> {
+    const result = await this.ensureDb().select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1);
+    if (result[0]) {
+      return userPreferencesSchema.parse(result[0]);
+    }
+    const defaults = userPreferencesSchema.parse({});
+    await this.ensureDb().insert(userPreferences).values({ userId, ...defaults });
+    return defaults;
+  }
+
+  async updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences> {
+    const current = await this.getUserPreferences(userId);
+    const merged = userPreferencesSchema.parse({ ...current, ...updates });
+    await this.ensureDb().update(userPreferences)
+      .set(merged)
+      .where(eq(userPreferences.userId, userId));
+    return merged;
+  }
+
+  // Net Worth
+  async getNetWorthSummary(): Promise<NetWorthSummary> {
+    const holdings = await this.getHoldings();
+    const stocksAndETFs = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    const properties = await this.getRealEstateProperties();
+    const realEstateValue = properties.reduce((sum, p) => sum + p.estimatedValue, 0);
+    const mortgages = properties.reduce((sum, p) => sum + (p.mortgageBalance || 0), 0);
+    const cryptoAssetsList = await this.getCryptoAssets();
+    const cryptoValue = cryptoAssetsList.reduce((sum, c) => sum + c.currentValue, 0);
+    const collectiblesList = await this.getCollectibles();
+    const collectiblesValue = collectiblesList.reduce((sum, c) => sum + c.estimatedValue, 0);
+    const altInvestments = await this.getAlternativeInvestments();
+    const altInvestmentsValue = altInvestments.reduce((sum, a) => sum + a.currentNAV, 0);
+    const totalNetWorth = stocksAndETFs + realEstateValue + cryptoValue + collectiblesValue + altInvestmentsValue;
+    const totalLiabilities = mortgages;
+    const netEquity = totalNetWorth - totalLiabilities;
+    return {
+      stocksAndETFs,
+      realEstate: realEstateValue,
+      crypto: cryptoValue,
+      collectibles: collectiblesValue,
+      alternativeInvestments: altInvestmentsValue,
+      totalNetWorth,
+      totalLiabilities,
+      netEquity,
+    };
+  }
+
+  // Financial Institutions
+  async getFinancialInstitutions(): Promise<FinancialInstitution[]> {
+    const results = await this.ensureDb().select().from(financialInstitutions);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as FinancialInstitution[];
+  }
+
+  async createFinancialInstitution(institution: InsertFinancialInstitution): Promise<FinancialInstitution> {
+    const result = await this.ensureDb().insert(financialInstitutions).values(institution).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as FinancialInstitution;
+  }
+
+  async updateFinancialInstitution(id: string, updates: Partial<InsertFinancialInstitution>): Promise<FinancialInstitution | undefined> {
+    const result = await this.ensureDb().update(financialInstitutions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(financialInstitutions.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as FinancialInstitution;
+  }
+
+  async deleteFinancialInstitution(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(financialInstitutions).where(eq(financialInstitutions.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Financial Accounts
+  async getFinancialAccounts(userId?: string): Promise<FinancialAccount[]> {
+    const db = this.ensureDb();
+    let results;
+    if (userId) {
+      results = await db.select().from(financialAccounts).where(eq(financialAccounts.userId, userId));
+    } else {
+      results = await db.select().from(financialAccounts);
+    }
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      lastSyncedAt: r.lastSyncedAt?.toISOString(),
+    })) as FinancialAccount[];
+  }
+
+  async createFinancialAccount(account: InsertFinancialAccount): Promise<FinancialAccount> {
+    const result = await this.ensureDb().insert(financialAccounts).values(account).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      lastSyncedAt: r.lastSyncedAt?.toISOString(),
+    } as FinancialAccount;
+  }
+
+  async updateFinancialAccount(id: string, updates: Partial<InsertFinancialAccount>): Promise<FinancialAccount | undefined> {
+    const result = await this.ensureDb().update(financialAccounts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(financialAccounts.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      lastSyncedAt: r.lastSyncedAt?.toISOString(),
+    } as FinancialAccount;
+  }
+
+  async deleteFinancialAccount(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(financialAccounts).where(eq(financialAccounts.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Transaction Categories
+  async getTransactionCategories(): Promise<TransactionCategory[]> {
+    const results = await this.ensureDb().select().from(transactionCategories);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as TransactionCategory[];
+  }
+
+  async createTransactionCategory(category: InsertTransactionCategory): Promise<TransactionCategory> {
+    const result = await this.ensureDb().insert(transactionCategories).values(category).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as TransactionCategory;
+  }
+
+  async updateTransactionCategory(id: string, updates: Partial<InsertTransactionCategory>): Promise<TransactionCategory | undefined> {
+    const result = await this.ensureDb().update(transactionCategories)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(transactionCategories.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as TransactionCategory;
+  }
+
+  async deleteTransactionCategory(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(transactionCategories).where(eq(transactionCategories.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Transaction Tags
+  async getTransactionTags(): Promise<TransactionTag[]> {
+    const results = await this.ensureDb().select().from(transactionTags);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as TransactionTag[];
+  }
+
+  async createTransactionTag(tag: InsertTransactionTag): Promise<TransactionTag> {
+    const result = await this.ensureDb().insert(transactionTags).values(tag).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as TransactionTag;
+  }
+
+  async updateTransactionTag(id: string, updates: Partial<InsertTransactionTag>): Promise<TransactionTag | undefined> {
+    const result = await this.ensureDb().update(transactionTags)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(transactionTags.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as TransactionTag;
+  }
+
+  async deleteTransactionTag(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(transactionTags).where(eq(transactionTags.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Transactions
+  async getTransactions(filters?: { accountId?: string; startDate?: string; endDate?: string }): Promise<Transaction[]> {
+    let query = this.ensureDb().select().from(transactions);
+    const conditions = [];
+    if (filters?.accountId) {
+      conditions.push(eq(transactions.accountId, filters.accountId));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(transactions.date, new Date(filters.startDate)));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(transactions.date, new Date(filters.endDate)));
+    }
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    const results = await query.orderBy(desc(transactions.date));
+    return results.map(r => ({
+      ...r,
+      date: r.date.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as Transaction[];
+  }
+
+  async getTransaction(id: string): Promise<Transaction | undefined> {
+    const result = await this.ensureDb().select().from(transactions).where(eq(transactions.id, id)).limit(1);
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      date: r.date.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Transaction;
+  }
+
+  async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
+    const result = await this.ensureDb().insert(transactions).values({
+      ...transaction,
+      date: new Date(transaction.date),
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      date: r.date.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Transaction;
+  }
+
+  async updateTransaction(id: string, updates: Partial<InsertTransaction>): Promise<Transaction | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.date) updateData.date = new Date(updates.date);
+    const result = await this.ensureDb().update(transactions)
+      .set(updateData)
+      .where(eq(transactions.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      date: r.date.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Transaction;
+  }
+
+  async deleteTransaction(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(transactions).where(eq(transactions.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Bills
+  async getBills(): Promise<Bill[]> {
+    const results = await this.ensureDb().select().from(bills);
+    return results.map(r => ({
+      ...r,
+      dueDate: r.dueDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as Bill[];
+  }
+
+  async createBill(bill: InsertBill): Promise<Bill> {
+    const result = await this.ensureDb().insert(bills).values({
+      ...bill,
+      dueDate: new Date(bill.dueDate),
+      lastPaidDate: bill.lastPaidDate ? new Date(bill.lastPaidDate) : undefined,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      dueDate: r.dueDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Bill;
+  }
+
+  async updateBill(id: string, updates: Partial<InsertBill>): Promise<Bill | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.dueDate) updateData.dueDate = new Date(updates.dueDate);
+    if (updates.lastPaidDate) updateData.lastPaidDate = new Date(updates.lastPaidDate);
+    const result = await this.ensureDb().update(bills)
+      .set(updateData)
+      .where(eq(bills.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      dueDate: r.dueDate.toISOString(),
+      lastPaidDate: r.lastPaidDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Bill;
+  }
+
+  async deleteBill(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(bills).where(eq(bills.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Subscriptions
+  async getSubscriptions(): Promise<Subscription[]> {
+    const results = await this.ensureDb().select().from(subscriptions);
+    return results.map(r => ({
+      ...r,
+      nextBillingDate: r.nextBillingDate.toISOString(),
+      lastBillingDate: r.lastBillingDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as Subscription[];
+  }
+
+  async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
+    const result = await this.ensureDb().insert(subscriptions).values({
+      ...subscription,
+      nextBillingDate: new Date(subscription.nextBillingDate),
+      lastBillingDate: subscription.lastBillingDate ? new Date(subscription.lastBillingDate) : undefined,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      nextBillingDate: r.nextBillingDate.toISOString(),
+      lastBillingDate: r.lastBillingDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Subscription;
+  }
+
+  async updateSubscription(id: string, updates: Partial<InsertSubscription>): Promise<Subscription | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.nextBillingDate) updateData.nextBillingDate = new Date(updates.nextBillingDate);
+    if (updates.lastBillingDate) updateData.lastBillingDate = new Date(updates.lastBillingDate);
+    const result = await this.ensureDb().update(subscriptions)
+      .set(updateData)
+      .where(eq(subscriptions.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      nextBillingDate: r.nextBillingDate.toISOString(),
+      lastBillingDate: r.lastBillingDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as Subscription;
+  }
+
+  async deleteSubscription(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(subscriptions).where(eq(subscriptions.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Sinking Funds
+  async getSinkingFunds(): Promise<SinkingFund[]> {
+    const results = await this.ensureDb().select().from(sinkingFunds);
+    return results.map(r => ({
+      ...r,
+      dueDate: r.dueDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as SinkingFund[];
+  }
+
+  async createSinkingFund(fund: InsertSinkingFund): Promise<SinkingFund> {
+    const result = await this.ensureDb().insert(sinkingFunds).values({
+      ...fund,
+      dueDate: fund.dueDate ? new Date(fund.dueDate) : undefined,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      dueDate: r.dueDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as SinkingFund;
+  }
+
+  async updateSinkingFund(id: string, updates: Partial<InsertSinkingFund>): Promise<SinkingFund | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.dueDate) updateData.dueDate = new Date(updates.dueDate);
+    const result = await this.ensureDb().update(sinkingFunds)
+      .set(updateData)
+      .where(eq(sinkingFunds.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      dueDate: r.dueDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as SinkingFund;
+  }
+
+  async deleteSinkingFund(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(sinkingFunds).where(eq(sinkingFunds.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Debt Plans
+  async getDebtPlans(): Promise<DebtPlan[]> {
+    const results = await this.ensureDb().select().from(debtPlans);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as DebtPlan[];
+  }
+
+  async createDebtPlan(plan: InsertDebtPlan): Promise<DebtPlan> {
+    const result = await this.ensureDb().insert(debtPlans).values(plan).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as DebtPlan;
+  }
+
+  async updateDebtPlan(id: string, updates: Partial<InsertDebtPlan>): Promise<DebtPlan | undefined> {
+    const result = await this.ensureDb().update(debtPlans)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(debtPlans.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as DebtPlan;
+  }
+
+  async deleteDebtPlan(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(debtPlans).where(eq(debtPlans.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Cash Flow Scenarios
+  async getCashFlowScenarios(): Promise<CashFlowScenario[]> {
+    const results = await this.ensureDb().select().from(cashFlowScenarios);
+    return results.map(r => ({
+      ...r,
+      startDate: r.startDate.toISOString(),
+      endDate: r.endDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as CashFlowScenario[];
+  }
+
+  async createCashFlowScenario(scenario: InsertCashFlowScenario): Promise<CashFlowScenario> {
+    const result = await this.ensureDb().insert(cashFlowScenarios).values({
+      ...scenario,
+      startDate: new Date(scenario.startDate),
+      endDate: scenario.endDate ? new Date(scenario.endDate) : undefined,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      startDate: r.startDate.toISOString(),
+      endDate: r.endDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CashFlowScenario;
+  }
+
+  async updateCashFlowScenario(id: string, updates: Partial<InsertCashFlowScenario>): Promise<CashFlowScenario | undefined> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.startDate) updateData.startDate = new Date(updates.startDate);
+    if (updates.endDate) updateData.endDate = new Date(updates.endDate);
+    const result = await this.ensureDb().update(cashFlowScenarios)
+      .set(updateData)
+      .where(eq(cashFlowScenarios.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      startDate: r.startDate.toISOString(),
+      endDate: r.endDate?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CashFlowScenario;
+  }
+
+  async deleteCashFlowScenario(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(cashFlowScenarios).where(eq(cashFlowScenarios.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Category Rules
+  async getCategoryRules(): Promise<CategoryRule[]> {
+    const results = await this.ensureDb().select().from(categoryRules);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })) as CategoryRule[];
+  }
+
+  async createCategoryRule(rule: InsertCategoryRule): Promise<CategoryRule> {
+    const result = await this.ensureDb().insert(categoryRules).values({
+      ...rule,
+      confidence: 0.5,
+      acceptedCount: 0,
+      rejectedCount: 0,
+    }).returning();
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CategoryRule;
+  }
+
+  async updateCategoryRule(id: string, updates: Partial<InsertCategoryRule>): Promise<CategoryRule | undefined> {
+    const existing = await this.ensureDb().select().from(categoryRules).where(eq(categoryRules.id, id)).limit(1);
+    if (!existing[0]) return undefined;
+    const acceptedCount = updates.acceptedCount ?? existing[0].acceptedCount;
+    const rejectedCount = updates.rejectedCount ?? existing[0].rejectedCount;
+    const total = acceptedCount + rejectedCount;
+    const confidence = total > 0 ? acceptedCount / total : 0.5;
+    const result = await this.ensureDb().update(categoryRules)
+      .set({
+        ...updates,
+        confidence,
+        updatedAt: new Date(),
+      })
+      .where(eq(categoryRules.id, id))
+      .returning();
+    if (!result[0]) return undefined;
+    const r = result[0];
+    return {
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    } as CategoryRule;
+  }
+
+  async deleteCategoryRule(id: string): Promise<boolean> {
+    try {
+      await this.ensureDb().delete(categoryRules).where(eq(categoryRules.id, id));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Anomalies
+  async getAnomalies(): Promise<Anomaly[]> {
+    const results = await this.ensureDb().select().from(anomalies);
+    return results.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+    })) as Anomaly[];
+  }
+
+  async setAnomalies(anomaliesList: Anomaly[]): Promise<void> {
+    // Delete all existing anomalies
+    await this.ensureDb().delete(anomalies);
+    // Insert new ones
+    if (anomaliesList.length > 0) {
+      await this.ensureDb().insert(anomalies).values(anomaliesList.map(a => ({
+        ...a,
+        createdAt: new Date(a.createdAt),
+      })));
+    }
+  }
+
+  // Security Settings
+  async getSecuritySettings(userId: string): Promise<SecuritySettings> {
+    const result = await this.ensureDb().select().from(securitySettings).where(eq(securitySettings.userId, userId)).limit(1);
+    if (result[0]) {
+      return {
+        ...result[0],
+        lastUpdated: result[0].lastUpdated?.toISOString(),
+      } as SecuritySettings;
+    }
+    const defaults: SecuritySettings = {
+      mfaEnabled: false,
+      biometricEnabled: false,
+      encryptionEnabled: true,
+      lastUpdated: new Date().toISOString(),
+    };
+    await this.ensureDb().insert(securitySettings).values({ userId, ...defaults });
+    return defaults;
+  }
+
+  async updateSecuritySettings(userId: string, updates: Partial<SecuritySettings>): Promise<SecuritySettings> {
+    const current = await this.getSecuritySettings(userId);
+    const merged: SecuritySettings = {
+      ...current,
+      ...updates,
+      lastUpdated: new Date().toISOString(),
+    };
+    await this.ensureDb().update(securitySettings)
+      .set({
+        ...merged,
+        lastUpdated: new Date(),
+      })
+      .where(eq(securitySettings.userId, userId));
+    return merged;
+  }
+}
+
+// Use database storage if DATABASE_URL is set and valid, otherwise use in-memory storage
+function createStorage() {
+  const dbUrl = process.env.DATABASE_URL;
+  // Check if DATABASE_URL is set and doesn't contain placeholder values
+  if (dbUrl && 
+      !dbUrl.includes("USERNAME") && 
+      !dbUrl.includes("PASSWORD") && 
+      !dbUrl.includes("DATABASE_NAME") &&
+      db !== null) {
+    try {
+      return new DatabaseStorage();
+    } catch (error) {
+      console.warn("Failed to initialize database storage, falling back to in-memory storage:", error);
+      return new MemStorage();
+    }
+  }
+  return new MemStorage();
+}
+
+export const storage = createStorage();
