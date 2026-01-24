@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -36,6 +37,9 @@ interface HoldingsTableProps {
   holdings: Holding[] | undefined;
   isLoading: boolean;
   timeframe: Timeframe;
+  size?: "small" | "medium" | "large";
+  sizeSelector?: ReactNode;
+  cardClassName?: string;
 }
 
 function formatCurrency(value: number): string {
@@ -68,12 +72,19 @@ function TableSkeleton() {
   );
 }
 
-export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableProps) {
+export function HoldingsTable({ holdings, isLoading, timeframe, size = "medium", sizeSelector, cardClassName }: HoldingsTableProps) {
+  const rowLimit = size === "small" ? 3 : size === "large" ? 8 : 5;
+  const showName = size !== "small";
+  const showQuantity = size === "large";
+  const showPrice = size !== "small";
+  const showSector = size === "large";
+
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className={cardClassName}>
+        <CardHeader className="flex items-center justify-between">
           <CardTitle>Portfolio Holdings</CardTitle>
+          {sizeSelector}
         </CardHeader>
         <CardContent>
           <TableSkeleton />
@@ -84,9 +95,10 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
 
   if (!holdings || holdings.length === 0) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className={cardClassName}>
+        <CardHeader className="flex items-center justify-between">
           <CardTitle>Portfolio Holdings</CardTitle>
+          {sizeSelector}
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -101,26 +113,27 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
     );
   }
 
-  // Limit to top 5 holdings for compact view
-  const displayHoldings = holdings.slice(0, 5);
+  // Limit rows based on size
+  const displayHoldings = holdings.slice(0, rowLimit);
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={cardClassName}>
+      <CardHeader className="flex items-center justify-between">
         <CardTitle>Portfolio Holdings</CardTitle>
+        {sizeSelector}
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <Table>
+          <Table className={size === "small" ? "text-xs" : "text-sm"}>
             <TableHeader>
               <TableRow>
                 <TableHead>Ticker</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead className="text-right">Price</TableHead>
+                {showName && <TableHead>Name</TableHead>}
+                {showQuantity && <TableHead className="text-right">Quantity</TableHead>}
+                {showPrice && <TableHead className="text-right">Price</TableHead>}
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead className="text-right">{timeframeLabels[timeframe]}</TableHead>
-                <TableHead>Sector</TableHead>
+                {showSector && <TableHead>Sector</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -133,15 +146,20 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
                     holding={holding} 
                     isPositive={isPositive}
                     logoUrl={logoUrl}
+                    size={size}
+                    showName={showName}
+                    showQuantity={showQuantity}
+                    showPrice={showPrice}
+                    showSector={showSector}
                   />
                 );
               })}
             </TableBody>
           </Table>
         </div>
-        {holdings.length > 5 && (
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            Showing top 5 of {holdings.length} holdings
+        {holdings.length > rowLimit && (
+          <div className={`mt-4 text-center text-muted-foreground ${size === "small" ? "text-xs" : "text-sm"}`}>
+            Showing top {rowLimit} of {holdings.length} holdings
           </div>
         )}
       </CardContent>
@@ -149,14 +167,32 @@ export function HoldingsTable({ holdings, isLoading, timeframe }: HoldingsTableP
   );
 }
 
-function HoldingRow({ holding, isPositive, logoUrl }: { holding: Holding; isPositive: boolean; logoUrl: string }) {
+function HoldingRow({
+  holding,
+  isPositive,
+  logoUrl,
+  size,
+  showName,
+  showQuantity,
+  showPrice,
+  showSector,
+}: {
+  holding: Holding;
+  isPositive: boolean;
+  logoUrl: string;
+  size: "small" | "medium" | "large";
+  showName: boolean;
+  showQuantity: boolean;
+  showPrice: boolean;
+  showSector: boolean;
+}) {
   const [logoError, setLogoError] = useState(false);
 
   return (
     <TableRow key={holding.id} data-testid={`row-holding-${holding.ticker}`}>
       <TableCell>
         <div className="flex items-center gap-2">
-          <div className="relative flex h-8 w-8 items-center justify-center rounded bg-primary/10 overflow-hidden shrink-0">
+          <div className={`relative flex items-center justify-center rounded bg-primary/10 overflow-hidden shrink-0 ${size === "small" ? "h-6 w-6" : "h-8 w-8"}`}>
             {!logoError ? (
               <img
                 src={logoUrl}
@@ -170,42 +206,48 @@ function HoldingRow({ holding, isPositive, logoUrl }: { holding: Holding; isPosi
               </span>
             )}
           </div>
-          <Badge variant="secondary" className="font-mono font-medium">
+          <Badge variant="secondary" className={`font-mono font-medium ${size === "small" ? "text-[10px]" : "text-xs"}`}>
             {holding.ticker}
           </Badge>
         </div>
       </TableCell>
-                    <TableCell className="font-medium">{holding.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {holding.quantity.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(holding.currentPrice)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">
-                      {formatCurrency(holding.currentValue)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div
-                        className={`flex items-center justify-end gap-1 ${
-                          isPositive ? "text-chart-1" : "text-destructive"
-                        }`}
-                      >
-                        {isPositive ? (
-                          <TrendingUp className="h-4 w-4" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4" />
-                        )}
-                        <span className="tabular-nums font-medium">
-                          {formatPercent(holding.growthRate30d)}
-                        </span>
-                      </div>
-                    </TableCell>
-      <TableCell>
-        <Badge variant="outline" className="text-xs">
-          {holding.sector}
-        </Badge>
+      {showName && <TableCell className="font-medium">{holding.name}</TableCell>}
+      {showQuantity && (
+        <TableCell className="text-right tabular-nums">
+          {holding.quantity.toFixed(2)}
+        </TableCell>
+      )}
+      {showPrice && (
+        <TableCell className="text-right tabular-nums">
+          {formatCurrency(holding.currentPrice)}
+        </TableCell>
+      )}
+      <TableCell className="text-right tabular-nums font-medium">
+        {formatCurrency(holding.currentValue)}
       </TableCell>
+      <TableCell className="text-right">
+        <div
+          className={`flex items-center justify-end gap-1 ${
+            isPositive ? "text-chart-1" : "text-destructive"
+          }`}
+        >
+          {size !== "small" && (isPositive ? (
+            <TrendingUp className="h-4 w-4" />
+          ) : (
+            <TrendingDown className="h-4 w-4" />
+          ))}
+          <span className="tabular-nums font-medium">
+            {formatPercent(holding.growthRate30d)}
+          </span>
+        </div>
+      </TableCell>
+      {showSector && (
+        <TableCell>
+          <Badge variant="outline" className="text-xs">
+            {holding.sector}
+          </Badge>
+        </TableCell>
+      )}
     </TableRow>
   );
 }

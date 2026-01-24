@@ -1,11 +1,17 @@
+import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import type { PortfolioMetrics, Holding } from "@shared/schema";
+
+type CardSize = "small" | "medium" | "large";
 
 interface PortfolioMetricsCardsProps {
   metrics: PortfolioMetrics | undefined;
   holdings: Holding[] | undefined;
   isLoading: boolean;
+  size?: CardSize;
+  sizeSelector?: ReactNode;
+  cardClassName?: string;
 }
 
 function formatCurrency(value: number): string {
@@ -36,7 +42,7 @@ function MetricSkeleton() {
   );
 }
 
-export function PortfolioMetricsCards({ metrics, holdings, isLoading }: PortfolioMetricsCardsProps) {
+export function PortfolioMetricsCards({ metrics, holdings, isLoading, size = "medium", sizeSelector, cardClassName }: PortfolioMetricsCardsProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 gap-4">
@@ -72,30 +78,44 @@ export function PortfolioMetricsCards({ metrics, holdings, isLoading }: Portfoli
 
   return (
     <div className="grid grid-cols-1 gap-4">
-      <Card>
+      <Card className={cardClassName}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
+          <CardTitle className={`font-medium text-muted-foreground ${size === "small" ? "text-xs" : "text-sm"}`}>
             Total Portfolio Value
           </CardTitle>
-          <DollarSign className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2">
+            {sizeSelector}
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold tabular-nums" data-testid="text-total-value">
+          <div
+            className={`font-bold tabular-nums ${
+              size === "small" ? "text-xl" : size === "large" ? "text-3xl" : "text-2xl"
+            }`}
+            data-testid="text-total-value"
+          >
             {formatCurrency(metrics.totalValue)}
           </div>
-          <div className="flex items-center gap-2 mt-2">
-            <div className={`text-sm font-medium tabular-nums ${isPositiveChange ? "text-chart-1" : "text-destructive"}`}>
+          <div className={`flex items-center gap-2 ${size === "small" ? "mt-1" : "mt-2"}`}>
+            <div className={`font-medium tabular-nums ${size === "small" ? "text-xs" : "text-sm"} ${isPositiveChange ? "text-chart-1" : "text-destructive"}`}>
               {isPositiveChange ? "+" : ""}{formatCurrency(dailyChange)}
             </div>
-            <div className={`text-xs tabular-nums ${isPositiveChange ? "text-chart-1" : "text-destructive"}`}>
-              ({isPositiveChange ? "+" : ""}{dailyChangePercent.toFixed(2)}%)
-            </div>
-            {isPositiveChange ? (
-              <TrendingUp className="h-3 w-3 text-chart-1" />
-            ) : (
-              <TrendingDown className="h-3 w-3 text-destructive" />
+            {size !== "small" && (
+              <div className={`tabular-nums ${size === "small" ? "text-[10px]" : "text-xs"} ${isPositiveChange ? "text-chart-1" : "text-destructive"}`}>
+                ({isPositiveChange ? "+" : ""}{dailyChangePercent.toFixed(2)}%)
+              </div>
             )}
-            <span className="text-xs text-muted-foreground">today</span>
+            {size === "large" && (
+              <>
+                {isPositiveChange ? (
+                  <TrendingUp className="h-3 w-3 text-chart-1" />
+                ) : (
+                  <TrendingDown className="h-3 w-3 text-destructive" />
+                )}
+                <span className="text-xs text-muted-foreground">today</span>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

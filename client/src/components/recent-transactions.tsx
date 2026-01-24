@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,7 +19,15 @@ const formatDate = (dateString: string) => {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-export function RecentTransactions() {
+export function RecentTransactions({
+  size = "medium",
+  sizeSelector,
+  cardClassName,
+}: {
+  size?: "small" | "medium" | "large";
+  sizeSelector?: ReactNode;
+  cardClassName?: string;
+}) {
   const { data: transactions, isLoading: transactionsLoading } = useQuery<Transaction[]>({
     queryKey: ["/api/transactions"],
   });
@@ -36,14 +45,19 @@ export function RecentTransactions() {
 
   if (transactionsLoading) {
     return (
-      <Card>
+      <Card className={cardClassName}>
         <CardHeader>
-          <CardTitle>Recent Transactions</CardTitle>
-          <CardDescription>Your latest financial activity</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Recent Transactions</CardTitle>
+              <CardDescription>Your latest financial activity</CardDescription>
+            </div>
+            {sizeSelector}
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[175px] space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
@@ -52,20 +66,25 @@ export function RecentTransactions() {
     );
   }
 
-  // Get recent transactions (last 5, sorted by date descending)
+  // Get recent transactions (last 3, sorted by date descending)
   const recentTransactions = (transactions || [])
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 5);
+    .slice(0, 3);
 
   if (recentTransactions.length === 0) {
     return (
-      <Card>
+      <Card className={cardClassName}>
         <CardHeader>
-          <CardTitle>Recent Transactions</CardTitle>
-          <CardDescription>Your latest financial activity</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Recent Transactions</CardTitle>
+              <CardDescription>Your latest financial activity</CardDescription>
+            </div>
+            {sizeSelector}
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[175px] flex flex-col items-center justify-center text-center">
+          <div className="flex flex-col items-center justify-center text-center py-6">
             <p className="text-sm text-muted-foreground">No transactions yet</p>
             <Link href="/transactions" className="text-sm text-primary hover:underline mt-2">
               Add transaction →
@@ -77,20 +96,23 @@ export function RecentTransactions() {
   }
 
   return (
-    <Card>
+    <Card className={cardClassName}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Recent Transactions</CardTitle>
             <CardDescription>Your latest financial activity</CardDescription>
           </div>
-          <Link href="/transactions" className="text-sm text-primary hover:underline">
-            View All →
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/transactions" className="text-sm text-primary hover:underline">
+              View All →
+            </Link>
+            {sizeSelector}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[175px] overflow-y-auto space-y-3">
+        <div className={`${size === "small" ? "space-y-2" : "space-y-3"}`}>
           {recentTransactions.map((txn) => {
             const category = txn.categoryId ? categoryMap.get(txn.categoryId) : null;
             const account = accountMap.get(txn.accountId);
@@ -100,43 +122,43 @@ export function RecentTransactions() {
             return (
               <div
                 key={txn.id}
-                className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors"
+                className={`flex items-center justify-between rounded-lg hover:bg-muted/50 transition-colors ${size === "small" ? "p-1.5" : "p-2"}`}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className={`p-1.5 rounded-full ${isDebit ? "bg-destructive/10" : "bg-chart-1/10"}`}>
+                  <div className={`rounded-full ${isDebit ? "bg-destructive/10" : "bg-chart-1/10"} ${size === "small" ? "p-1" : "p-1.5"}`}>
                     {isDebit ? (
-                      <ArrowDownRight className={`h-3.5 w-3.5 ${isDebit ? "text-destructive" : "text-chart-1"}`} />
+                      <ArrowDownRight className={`${size === "small" ? "h-3 w-3" : "h-3.5 w-3.5"} ${isDebit ? "text-destructive" : "text-chart-1"}`} />
                     ) : (
-                      <ArrowUpRight className={`h-3.5 w-3.5 ${isDebit ? "text-destructive" : "text-chart-1"}`} />
+                      <ArrowUpRight className={`${size === "small" ? "h-3 w-3" : "h-3.5 w-3.5"} ${isDebit ? "text-destructive" : "text-chart-1"}`} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{txn.name}</p>
-                      {txn.isVerified && (
+                      <p className={`${size === "small" ? "text-xs" : "text-sm"} font-medium truncate`}>{txn.name}</p>
+                      {size !== "small" && txn.isVerified && (
                         <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
                           Verified
                         </Badge>
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-xs text-muted-foreground">{formatDate(txn.date)}</p>
-                      {category && (
+                      <p className={`${size === "small" ? "text-[10px]" : "text-xs"} text-muted-foreground`}>{formatDate(txn.date)}</p>
+                      {size !== "small" && category && (
                         <>
                           <span className="text-xs text-muted-foreground">•</span>
-                          <p className="text-xs text-muted-foreground truncate">{category.name}</p>
+                          <p className={`${size === "small" ? "text-[10px]" : "text-xs"} text-muted-foreground truncate`}>{category.name}</p>
                         </>
                       )}
-                      {account && (
+                      {size !== "small" && account && (
                         <>
                           <span className="text-xs text-muted-foreground">•</span>
-                          <p className="text-xs text-muted-foreground truncate">{account.name}</p>
+                          <p className={`${size === "small" ? "text-[10px]" : "text-xs"} text-muted-foreground truncate`}>{account.name}</p>
                         </>
                       )}
                     </div>
                   </div>
                 </div>
-                <div className={`text-sm font-semibold tabular-nums ml-2 ${isDebit ? "text-destructive" : "text-chart-1"}`}>
+                <div className={`${size === "small" ? "text-xs" : "text-sm"} font-semibold tabular-nums ml-2 ${isDebit ? "text-destructive" : "text-chart-1"}`}>
                   {isDebit ? "-" : "+"}{formatCurrency(amount)}
                 </div>
               </div>

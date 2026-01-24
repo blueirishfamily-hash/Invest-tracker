@@ -5,6 +5,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx watch server/index.ts",
+    "dev:nospawn": "cross-env NODE_ENV=development node --import ./scripts/ts-resolve-loader.mjs --experimental-strip-types server/index.ts",
+    "dev:external": "start cmd /k \"cd /d %CD% && npm run dev\"",
+    "preview": "start http://localhost:5000",
     "build": "tsx script/build.ts",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Maximize2, Minimize2 } from "lucide-react";
@@ -25,6 +26,9 @@ interface BenchmarkChartProps {
   onExpandClick?: () => void;
   noCard?: boolean; // If true, don't render Card wrapper
   returnType?: "TWR" | "MWR";
+  size?: "small" | "medium" | "large";
+  sizeSelector?: ReactNode;
+  cardClassName?: string;
 }
 
 function ChartSkeleton() {
@@ -195,10 +199,12 @@ const COLORS = [
   "hsl(280 50% 50%)",
 ];
 
-export function BenchmarkChart({ data, chartData, categoryData, isLoading, timeframe, title, isExpanded, onExpandClick, noCard = false, returnType = "TWR" }: BenchmarkChartProps) {
+export function BenchmarkChart({ data, chartData, categoryData, isLoading, timeframe, title, isExpanded, onExpandClick, noCard = false, returnType = "TWR", size = "medium", sizeSelector, cardClassName }: BenchmarkChartProps) {
   // If categoryData is provided or noCard is true, don't use S&P 500 default title
   // Use provided title or empty string (when noCard=true, title should be empty to avoid showing header)
   const chartTitle = (categoryData || noCard) ? (title || "") : (title || "Portfolio vs S&P 500 Benchmark");
+  const chartHeightClass = size === "small" ? "h-[160px]" : size === "large" ? "h-[260px]" : "h-[200px]";
+  const statCardPadding = size === "small" ? "p-2" : size === "large" ? "p-4" : "p-3";
 
   if (isLoading) {
     const content = (
@@ -236,42 +242,51 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Calculate performance for each category
-    const categoryPerformance = categoryData.map(cat => {
+    const categoryPerformance: Array<{ category: string; performance: number }> = categoryData.map(cat => {
       if (cat.data.length === 0) return { category: cat.category, performance: 0 };
       const start = cat.data[0].value;
       const end = cat.data[cat.data.length - 1].value;
       // Data is already indexed to 100, so performance is end - 100
       return { category: cat.category, performance: end - 100 };
     });
+    const visibleCategoryPerformance =
+      size === "small"
+        ? categoryPerformance.slice(0, 2)
+        : size === "medium"
+          ? categoryPerformance.slice(0, 4)
+          : categoryPerformance;
 
     const chartContent = (
       <>
         {!noCard && (
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>{chartTitle}</span>
-              {onExpandClick && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onExpandClick();
-                  }}
-                >
-                  {isExpanded ? (
-                    <Minimize2 className="h-4 w-4" />
-                  ) : (
-                    <Maximize2 className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-            </CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="truncate">{chartTitle}</CardTitle>
+              <div className="flex items-center gap-2">
+                {sizeSelector}
+                {onExpandClick && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onExpandClick();
+                    }}
+                  >
+                    {isExpanded ? (
+                      <Minimize2 className="h-4 w-4" />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
         )}
         <CardContent>
-          <div className="h-[200px]">
+          <div className={chartHeightClass}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={mergedData}
@@ -297,8 +312,9 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
                   }}
                   labelStyle={{ color: "hsl(var(--foreground))" }}
                   formatter={(value: number, name: string) => {
-                    const percent = ((value as number) - 100).toFixed(2);
-                    return [`${percent >= 0 ? "+" : ""}${percent}%`, name];
+                    const percentValue = (value as number) - 100;
+                    const percent = percentValue.toFixed(2);
+                    return [`${percentValue >= 0 ? "+" : ""}${percent}%`, name];
                   }}
                 />
                 <Legend 
@@ -319,11 +335,11 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
-            {categoryPerformance.map((perf, index) => (
-              <div key={perf.category} className="p-3 rounded-lg bg-muted/50">
-                <div className="text-sm text-muted-foreground truncate">{perf.category}</div>
-                <div className={`text-xl font-bold tabular-nums ${perf.performance >= 0 ? "text-chart-1" : "text-destructive"}`}>
+          <div className={`mt-4 grid gap-3 text-center ${size === "small" ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+            {visibleCategoryPerformance.map((perf, index) => (
+              <div key={perf.category} className={`${statCardPadding} rounded-lg bg-muted/50`}>
+                <div className={`${size === "small" ? "text-xs" : "text-sm"} text-muted-foreground truncate`}>{perf.category}</div>
+                <div className={`${size === "small" ? "text-lg" : "text-xl"} font-bold tabular-nums ${perf.performance >= 0 ? "text-chart-1" : "text-destructive"}`}>
                   {perf.performance >= 0 ? "+" : ""}{perf.performance.toFixed(2)}%
                 </div>
               </div>
@@ -334,7 +350,7 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
     );
     
     return noCard ? <>{chartContent}</> : (
-      <Card className={onExpandClick ? "cursor-pointer" : ""} onClick={onExpandClick}>
+      <Card className={`${cardClassName ?? ""} ${onExpandClick ? "cursor-pointer" : ""}`} onClick={onExpandClick}>
         {chartContent}
       </Card>
     );
@@ -342,31 +358,34 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
 
   if (!data) {
     return (
-      <Card className={onExpandClick ? "cursor-pointer" : ""} onClick={onExpandClick}>
+      <Card className={`${cardClassName ?? ""} ${onExpandClick ? "cursor-pointer" : ""}`} onClick={onExpandClick}>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>{chartTitle}</span>
-            {onExpandClick && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onExpandClick();
-                }}
-              >
-                {isExpanded ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
-              </Button>
-            )}
-          </CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="truncate">{chartTitle}</CardTitle>
+            <div className="flex items-center gap-2">
+              {sizeSelector}
+              {onExpandClick && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExpandClick();
+                  }}
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+          <div className={`${chartHeightClass} flex items-center justify-center text-muted-foreground`}>
             No benchmark data available
           </div>
         </CardContent>
@@ -410,17 +429,22 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
   };
 
   return (
-    <Card>
+    <Card className={cardClassName}>
       <CardHeader>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <CardTitle>Portfolio vs S&P 500</CardTitle>
-          <div className={`text-sm font-medium ${outperforming ? "text-chart-1" : "text-chart-4"}`}>
-            {outperforming ? "Outperforming" : "Underperforming"} by {Math.abs(difference).toFixed(2)}%
+          <div className="flex items-center gap-3">
+            {size !== "small" && (
+              <div className={`text-sm font-medium ${outperforming ? "text-chart-1" : "text-chart-4"}`}>
+                {outperforming ? "Outperforming" : "Underperforming"} by {Math.abs(difference).toFixed(2)}%
+              </div>
+            )}
+            {sizeSelector}
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[200px]">
+        <div className={chartHeightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={displayChartData}
@@ -438,12 +462,12 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
                 axisLine={{ stroke: "hsl(var(--border))" }}
                 tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(0)}%`}
                 domain={[
-                  (dataMin) => {
+                  (dataMin: number) => {
                     const allValues = displayChartData.flatMap(d => [d.portfolio, d.spy]);
                     const min = Math.min(...allValues, 0);
                     return min < 0 ? min * 1.1 : 0;
                   },
-                  (dataMax) => {
+                  (dataMax: number) => {
                     const allValues = displayChartData.flatMap(d => [d.portfolio, d.spy]);
                     const max = Math.max(...allValues, 0);
                     return max > 0 ? max * 1.1 : 'auto';
@@ -482,20 +506,22 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-4 text-center">
-          <div className="p-3 rounded-lg bg-muted/50">
-            <div className="text-sm text-muted-foreground">Portfolio {timeframeLabel[timeframe]}</div>
-            <div className={`text-xl font-bold tabular-nums ${portfolioPerformance >= 0 ? "text-chart-1" : "text-destructive"}`}>
-              {portfolioPerformance >= 0 ? "+" : ""}{portfolioPerformance.toFixed(2)}%
+        {size === "large" && (
+          <div className={`mt-4 grid grid-cols-2 gap-4 text-center`}>
+            <div className={`${statCardPadding} rounded-lg bg-muted/50`}>
+              <div className="text-sm text-muted-foreground">Portfolio {timeframeLabel[timeframe]}</div>
+              <div className={`text-xl font-bold tabular-nums ${portfolioPerformance >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                {portfolioPerformance >= 0 ? "+" : ""}{portfolioPerformance.toFixed(2)}%
+              </div>
+            </div>
+            <div className={`${statCardPadding} rounded-lg bg-muted/50`}>
+              <div className="text-sm text-muted-foreground">SPY {timeframeLabel[timeframe]}</div>
+              <div className={`text-xl font-bold tabular-nums ${spyPerformance >= 0 ? "text-chart-4" : "text-destructive"}`}>
+                {spyPerformance >= 0 ? "+" : ""}{spyPerformance.toFixed(2)}%
+              </div>
             </div>
           </div>
-          <div className="p-3 rounded-lg bg-muted/50">
-            <div className="text-sm text-muted-foreground">SPY {timeframeLabel[timeframe]}</div>
-            <div className={`text-xl font-bold tabular-nums ${spyPerformance >= 0 ? "text-chart-4" : "text-destructive"}`}>
-              {spyPerformance >= 0 ? "+" : ""}{spyPerformance.toFixed(2)}%
-            </div>
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );

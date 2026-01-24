@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,20 +33,33 @@ const formatCurrency = (value: number) =>
     minimumFractionDigits: 0,
   }).format(value);
 
-export function BudgetPieChart() {
+export function BudgetPieChart({
+  size = "medium",
+  sizeSelector,
+  cardClassName,
+}: {
+  size?: "small" | "medium" | "large";
+  sizeSelector?: ReactNode;
+  cardClassName?: string;
+}) {
   const { data, isLoading } = useQuery<CashFlowData>({
     queryKey: ["/api/cash-flow/snapshot"],
   });
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className={cardClassName}>
         <CardHeader>
-          <CardTitle>Budget Overview</CardTitle>
-          <CardDescription>Current month budget breakdown</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Budget Overview</CardTitle>
+              <CardDescription>Current month budget breakdown</CardDescription>
+            </div>
+            {sizeSelector}
+          </div>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-[175px] w-full" />
+          <Skeleton className={`${size === "small" ? "h-[150px]" : size === "large" ? "h-[220px]" : "h-[175px]"} w-full`} />
         </CardContent>
       </Card>
     );
@@ -53,13 +67,18 @@ export function BudgetPieChart() {
 
   if (!data) {
     return (
-      <Card>
+      <Card className={cardClassName}>
         <CardHeader>
-          <CardTitle>Budget Overview</CardTitle>
-          <CardDescription>Current month budget breakdown</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Budget Overview</CardTitle>
+              <CardDescription>Current month budget breakdown</CardDescription>
+            </div>
+            {sizeSelector}
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[175px] flex items-center justify-center text-muted-foreground">
+          <div className={`${size === "small" ? "h-[150px]" : size === "large" ? "h-[220px]" : "h-[175px]"} flex items-center justify-center text-muted-foreground`}>
             No budget data available
           </div>
         </CardContent>
@@ -104,11 +123,11 @@ export function BudgetPieChart() {
   // Filter to only show top-level categories (no parentId) and get top 5
   const topCategories = (data.expensesByCategory || [])
     .filter((cat) => !cat.parentId) // Only top-level categories
-    .slice(0, 5);
+    .slice(0, size === "small" ? 3 : size === "large" ? 6 : 5);
 
   if (chartData.length === 0) {
     return (
-      <Card>
+      <Card className={cardClassName}>
         <CardHeader>
           <CardTitle>Budget Overview</CardTitle>
           <CardDescription>Current month budget breakdown</CardDescription>
@@ -123,19 +142,24 @@ export function BudgetPieChart() {
   }
 
   return (
-    <Card>
+    <Card className={cardClassName}>
       <CardHeader>
-        <CardTitle>Budget Overview</CardTitle>
-        <CardDescription>Current month budget breakdown</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Budget Overview</CardTitle>
+              <CardDescription>Current month budget breakdown</CardDescription>
+            </div>
+            {sizeSelector}
+          </div>
       </CardHeader>
       <CardContent>
-        <div className="flex gap-6">
+          <div className={`${size === "small" ? "flex flex-col gap-4" : "flex gap-6"}`}>
           <ChartContainer
             config={{
               income: { label: "Income", color: "hsl(var(--chart-1))" },
               available: { label: "Safe to Spend", color: "hsl(var(--chart-3))" },
             }}
-            className="h-[175px] flex-1"
+            className={`${size === "small" ? "h-[150px]" : size === "large" ? "h-[220px]" : "h-[175px]"} flex-1`}
           >
             <PieChart>
               <Pie
@@ -146,9 +170,10 @@ export function BudgetPieChart() {
                 label={({ name, percent }) => {
                   const pct = (percent * 100).toFixed(0);
                   // Only show label if slice is large enough
+                  if (size === "small") return "";
                   return percent > 0.05 ? `${name}: ${pct}%` : "";
                 }}
-                outerRadius={60}
+                outerRadius={size === "small" ? 50 : size === "large" ? 70 : 60}
                 fill="#8884d8"
                 dataKey="value"
               >
@@ -157,15 +182,15 @@ export function BudgetPieChart() {
                 ))}
               </Pie>
               <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />} />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
+              {size !== "small" && <Legend wrapperStyle={{ fontSize: "12px" }} />}
             </PieChart>
           </ChartContainer>
           {topCategories.length > 0 && (
-            <div className="w-48 border rounded-lg p-4">
-              <h3 className="font-semibold mb-3 text-sm">Top Expense Categories</h3>
-              <div className="space-y-2">
+            <div className={`${size === "small" ? "w-full" : size === "large" ? "w-56" : "w-48"} border rounded-lg p-4`}>
+              <h3 className={`font-semibold mb-3 ${size === "small" ? "text-xs" : "text-sm"}`}>Top Expense Categories</h3>
+              <div className={`${size === "small" ? "space-y-1.5" : "space-y-2"}`}>
                 {topCategories.map((cat) => (
-                  <div key={cat.categoryId} className="flex items-center justify-between text-xs">
+                  <div key={cat.categoryId} className={`flex items-center justify-between ${size === "small" ? "text-[11px]" : "text-xs"}`}>
                     <div className="flex items-center gap-2">
                       {cat.color && (
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />

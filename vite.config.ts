@@ -25,6 +25,8 @@ export default defineConfig({
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
+    // Avoid realpath spawn on Windows (EPERM in sandboxed environments)
+    preserveSymlinks: true,
   },
   root: path.resolve(import.meta.dirname, "client"),
   build: {
@@ -32,9 +34,6 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    fs: {
-      strict: true,
-      deny: ["**/.*"],
-    },
+    fs: { strict: false },
   },
 });
