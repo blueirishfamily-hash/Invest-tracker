@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PortfolioMetricsCards } from "@/components/portfolio-metrics";
 import { HoldingsTable } from "@/components/holdings-table";
 import { BenchmarkChart } from "@/components/benchmark-chart";
 import { BudgetPieChart } from "@/components/budget-pie-chart";
@@ -8,27 +7,138 @@ import { GoalProgression } from "@/components/goal-progression";
 import { RecentTransactions } from "@/components/recent-transactions";
 import { SEO } from "@/components/seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, Home, Bitcoin, Gem, Briefcase, DollarSign } from "lucide-react";
+import { Bitcoin, Briefcase, DollarSign, Gem, GripVertical, Home, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 import type { Holding, PortfolioMetrics, BenchmarkData, NetWorthSummary } from "@shared/schema";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type Timeframe = "1D" | "5D" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "MAX";
 type CardSize = "small" | "medium" | "large";
+type CardId = "netWorth" | "benchmark" | "holdings" | "goalProgression" | "budgetOverview" | "recentTransactions";
+
+const DEFAULT_CARD_ORDER: CardId[] = [
+  "netWorth",
+  "benchmark",
+  "holdings",
+  "goalProgression",
+  "budgetOverview",
+  "recentTransactions",
+];
+
+const CARD_ORDER_STORAGE_KEY = "dashboard:cardOrder:v1";
+
+function normalizeCardOrder(value: unknown): CardId[] | null {
+  if (!Array.isArray(value)) return null;
+  const asStrings = value.filter((v) => typeof v === "string") as string[];
+  const isCardId = (v: string): v is CardId => (DEFAULT_CARD_ORDER as string[]).includes(v);
+  const filtered = asStrings.filter(isCardId) as CardId[];
+  // Must contain all IDs exactly once
+  const set = new Set(filtered);
+  if (set.size !== DEFAULT_CARD_ORDER.length) return null;
+  for (const id of DEFAULT_CARD_ORDER) {
+    if (!set.has(id)) return null;
+  }
+  return [...set] as CardId[];
+}
+
+function SortableCard({
+  id,
+  className,
+  children,
+}: {
+  id: CardId;
+  className: string;
+  children: (dragHandle: ReactNode) => ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const dragHandle = (
+    <button
+      ref={setActivatorNodeRef}
+      type="button"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
+      aria-label="Drag to reorder"
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical className="h-4 w-4" />
+    </button>
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`${className} ${isDragging ? "z-10" : ""}`}
+    >
+      {children(dragHandle)}
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [timeframe, setTimeframe] = useState<Timeframe>("1M");
-  const [cardSizes, setCardSizes] = useState<Record<string, CardSize>>({
+  const [cardSizes, setCardSizes] = useState<Record<CardId, CardSize>>({
     netWorth: "large",
-    portfolioMetrics: "medium",
     benchmark: "medium",
     holdings: "medium",
     goalProgression: "medium",
     budgetOverview: "medium",
     recentTransactions: "medium",
   });
+
+  const [cardOrder, setCardOrder] = useState<CardId[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_CARD_ORDER;
+    try {
+      const raw = window.localStorage.getItem(CARD_ORDER_STORAGE_KEY);
+      if (!raw) return DEFAULT_CARD_ORDER;
+      const parsed: unknown = JSON.parse(raw);
+      return normalizeCardOrder(parsed) ?? DEFAULT_CARD_ORDER;
+    } catch {
+      return DEFAULT_CARD_ORDER;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CARD_ORDER_STORAGE_KEY, JSON.stringify(cardOrder));
+    } catch {
+      // ignore
+    }
+  }, [cardOrder]);
   const { data: holdings, isLoading: holdingsLoading } = useQuery<Holding[]>({
     queryKey: ["/api/holdings"],
   });
@@ -79,44 +189,92 @@ export default function Dashboard() {
     }).format(value);
   };
 
-  const renderSizeSelect = (cardId: string) => (
-    <Select
-      value={cardSizes[cardId]}
-      onValueChange={(value) =>
-        setCardSizes((prev) => ({ ...prev, [cardId]: value as CardSize }))
-      }
-    >
-      <SelectTrigger className="h-7 w-[120px] text-xs">
-        <SelectValue placeholder="Size" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="small">Small</SelectItem>
-        <SelectItem value="medium">Medium</SelectItem>
-        <SelectItem value="large">Large</SelectItem>
-      </SelectContent>
-    </Select>
-  );
+  const nextSize = (size: CardSize): CardSize =>
+    size === "large" ? "medium" : size === "medium" ? "small" : "large";
 
-  const cardSpanClasses: Record<string, Record<CardSize, string>> = {
-    portfolioMetrics: {
-      small: "lg:col-span-4",
-      medium: "lg:col-span-6",
-      large: "lg:col-span-8",
+  const sizeLabel = (size: CardSize) => (size === "large" ? "Large" : size === "medium" ? "Medium" : "Small");
+
+  const SizeIcon = ({ size }: { size: CardSize }) => {
+    const fillOuter = size === "large";
+    const fillMiddle = size === "large" || size === "medium";
+    const fillInner = true;
+    return (
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <circle
+          cx="9"
+          cy="9"
+          r="7"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          fill={fillOuter ? "currentColor" : "none"}
+          opacity={fillOuter ? 1 : 0.5}
+        />
+        <circle
+          cx="9"
+          cy="9"
+          r="4.5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          fill={fillMiddle ? "currentColor" : "none"}
+          opacity={fillMiddle ? 1 : 0.5}
+        />
+        <circle
+          cx="9"
+          cy="9"
+          r="2.2"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          fill={fillInner ? "currentColor" : "none"}
+          opacity={1}
+        />
+      </svg>
+    );
+  };
+
+  const renderSizeToggle = (cardId: CardId) => {
+    const current = cardSizes[cardId];
+    const label = sizeLabel(current);
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            aria-label={`Size: ${label} (click to change)`}
+            onClick={() =>
+              setCardSizes((prev) => ({ ...prev, [cardId]: nextSize(prev[cardId]) }))
+            }
+          >
+            <SizeIcon size={current} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Size: {label}</TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  const cardSpanClasses: Record<CardId, Record<CardSize, string>> = {
+    netWorth: {
+      small: "lg:col-span-6",
+      medium: "lg:col-span-8",
+      large: "lg:col-span-12",
     },
     benchmark: {
-      small: "lg:col-span-8",
-      medium: "lg:col-span-6",
+      small: "lg:col-span-4",
+      medium: "lg:col-span-8",
       large: "lg:col-span-12",
     },
     holdings: {
-      small: "lg:col-span-6",
+      small: "lg:col-span-8",
       medium: "lg:col-span-6",
       large: "lg:col-span-12",
     },
     goalProgression: {
       small: "lg:col-span-4",
       medium: "lg:col-span-6",
-      large: "lg:col-span-6",
+      large: "lg:col-span-4",
     },
     budgetOverview: {
       small: "lg:col-span-4",
@@ -130,38 +288,228 @@ export default function Dashboard() {
     },
   };
 
-  const cardHeightClasses: Record<string, Record<CardSize, string>> = {
-    portfolioMetrics: {
-      small: "min-h-[180px]",
-      medium: "min-h-[220px]",
-      large: "min-h-[260px]",
+  const cardHeightClasses: Record<CardId, Record<CardSize, string>> = {
+    netWorth: {
+      small: "min-h-[220px]",
+      medium: "min-h-[280px]",
+      large: "min-h-[340px]",
     },
     benchmark: {
-      small: "min-h-[260px]",
+      small: "min-h-[180px]",
       medium: "min-h-[320px]",
       large: "min-h-[380px]",
     },
     holdings: {
       small: "min-h-[260px]",
-      medium: "min-h-[320px]",
-      large: "min-h-[400px]",
+      medium: "min-h-[340px]",
+      large: "min-h-[440px]",
     },
     goalProgression: {
-      small: "min-h-[220px]",
-      medium: "min-h-[260px]",
-      large: "min-h-[300px]",
-    },
-    budgetOverview: {
       small: "min-h-[220px]",
       medium: "min-h-[280px]",
       large: "min-h-[340px]",
     },
+    budgetOverview: {
+      small: "min-h-[220px]",
+      medium: "min-h-[300px]",
+      large: "min-h-[380px]",
+    },
     recentTransactions: {
       small: "min-h-[220px]",
       medium: "min-h-[260px]",
-      large: "min-h-[300px]",
+      large: "min-h-[320px]",
     },
   };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setCardOrder((items) => {
+      const oldIndex = items.indexOf(active.id as CardId);
+      const newIndex = items.indexOf(over.id as CardId);
+      if (oldIndex === -1 || newIndex === -1) return items;
+      return arrayMove(items, oldIndex, newIndex);
+    });
+  };
+
+  // Compute daily change from holdings (same approach as the removed PortfolioMetricsCards)
+  const computedTotalValue = metrics?.totalValue ?? 0;
+  let dailyChange = 0;
+  let dailyChangePercent = 0;
+
+  if (holdings && holdings.length > 0) {
+    const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+    if (totalValue > 0) {
+      const weightedDailyChange = holdings.reduce((sum, h) => {
+        const dailyGrowthRate = h.growthRate30d / 30;
+        const dailyChangeForHolding = (h.currentValue * dailyGrowthRate) / 100;
+        return sum + dailyChangeForHolding;
+      }, 0);
+      dailyChange = weightedDailyChange;
+      dailyChangePercent = (dailyChange / totalValue) * 100;
+    }
+  }
+
+  const controlsFor = (id: CardId, dragHandle: ReactNode) => (
+    <div className="flex items-center gap-1">
+      {dragHandle}
+      {renderSizeToggle(id)}
+    </div>
+  );
+
+  const renderCard = useMemo(() => {
+    return (id: CardId, dragHandle: ReactNode) => {
+      switch (id) {
+        case "netWorth":
+          return (
+            <Card className="h-full">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <DollarSign className="h-5 w-5" />
+                      Net Worth
+                    </CardTitle>
+                    <CardDescription>Total value across all asset classes</CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Link href="/assets" className="text-sm text-primary hover:underline">
+                      Manage Assets →
+                    </Link>
+                    {controlsFor("netWorth", dragHandle)}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {netWorthLoading ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-10 w-48" />
+                    <div className="grid grid-cols-5 gap-4">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <Skeleton key={i} className="h-12" />
+                      ))}
+                    </div>
+                  </div>
+                ) : netWorth ? (
+                  <div>
+                    <div className="mb-4">
+                      <div
+                        className={`font-bold ${
+                          cardSizes.netWorth === "small"
+                            ? "text-2xl"
+                            : cardSizes.netWorth === "large"
+                              ? "text-4xl"
+                              : "text-3xl"
+                        }`}
+                      >
+                        {formatCurrency(netWorth.netEquity)}
+                      </div>
+                      <div className={`text-muted-foreground ${cardSizes.netWorth === "small" ? "text-xs" : "text-sm"}`}>
+                        Assets: {formatCurrency(netWorth.totalNetWorth)} | Liabilities: {formatCurrency(netWorth.totalLiabilities)}
+                      </div>
+                    </div>
+                    {cardSizes.netWorth !== "small" && (() => {
+                      const categories = [
+                        { label: "Stocks & ETFs", value: netWorth.stocksAndETFs, icon: TrendingUp, color: "text-blue-500", bgColor: "bg-blue-500" },
+                        { label: "Real Estate", value: netWorth.realEstate, icon: Home, color: "text-green-500", bgColor: "bg-green-500" },
+                        { label: "Crypto", value: netWorth.crypto, icon: Bitcoin, color: "text-orange-500", bgColor: "bg-orange-500" },
+                        { label: "Collectibles", value: netWorth.collectibles, icon: Gem, color: "text-purple-500", bgColor: "bg-purple-500" },
+                        { label: "Alt Investments", value: netWorth.alternativeInvestments, icon: Briefcase, color: "text-cyan-500", bgColor: "bg-cyan-500" },
+                      ];
+                      const visibleCategories =
+                        cardSizes.netWorth === "medium" ? categories.slice(0, 3) : categories;
+                      return (
+                        <div
+                          className={`grid gap-3 ${
+                            cardSizes.netWorth === "large"
+                              ? "grid-cols-2 md:grid-cols-5"
+                              : "grid-cols-2 sm:grid-cols-3"
+                          }`}
+                        >
+                          {visibleCategories.map((cat) => {
+                            const percentage = netWorth.totalNetWorth > 0
+                              ? (cat.value / netWorth.totalNetWorth) * 100
+                              : 0;
+                            return (
+                              <div key={cat.label} className="p-2 rounded-lg bg-muted/50">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <cat.icon className={`h-3.5 w-3.5 ${cat.color}`} />
+                                  <span className="text-xs text-muted-foreground truncate">{cat.label}</span>
+                                </div>
+                                <div className={`font-semibold ${cardSizes.netWorth === "medium" ? "text-xs" : "text-sm"}`}>
+                                  {formatCurrency(cat.value)}
+                                </div>
+                                <Progress value={percentage} className={`mt-1 ${cardSizes.netWorth === "medium" ? "h-0.5" : "h-1"}`} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        case "benchmark":
+          return (
+            <BenchmarkChart
+              data={benchmark}
+              chartData={benchmarkChart}
+              isLoading={benchmarkLoading || benchmarkChartLoading}
+              timeframe={timeframe}
+              size={cardSizes.benchmark}
+              sizeSelector={controlsFor("benchmark", dragHandle)}
+              cardClassName="h-full"
+              totalValue={computedTotalValue}
+              dailyChange={dailyChange}
+              dailyChangePercent={dailyChangePercent}
+            />
+          );
+        case "holdings":
+          return (
+            <HoldingsTable
+              holdings={holdings}
+              isLoading={holdingsLoading}
+              timeframe={timeframe}
+              size={cardSizes.holdings}
+              sizeSelector={controlsFor("holdings", dragHandle)}
+              cardClassName="h-full"
+            />
+          );
+        case "goalProgression":
+          return (
+            <GoalProgression
+              size={cardSizes.goalProgression}
+              sizeSelector={controlsFor("goalProgression", dragHandle)}
+              cardClassName="h-full"
+            />
+          );
+        case "budgetOverview":
+          return (
+            <BudgetPieChart
+              size={cardSizes.budgetOverview}
+              sizeSelector={controlsFor("budgetOverview", dragHandle)}
+              cardClassName="h-full"
+            />
+          );
+        case "recentTransactions":
+          return (
+            <RecentTransactions
+              size={cardSizes.recentTransactions}
+              sizeSelector={controlsFor("recentTransactions", dragHandle)}
+              cardClassName="h-full"
+            />
+          );
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [benchmark, benchmarkChart, benchmarkChartLoading, benchmarkLoading, cardSizes, computedTotalValue, dailyChange, dailyChangePercent, holdings, holdingsLoading, netWorth, netWorthLoading, timeframe]);
 
   return (
     <div className="p-6 space-y-6" data-testid="page-dashboard">
@@ -178,151 +526,22 @@ export default function Dashboard() {
           Track your investment performance and market insights
         </p>
       </div>
-
-      {/* Net Worth Summary Card */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Net Worth
-              </CardTitle>
-              <CardDescription>Total value across all asset classes</CardDescription>
-            </div>
-            <div className="flex items-center gap-3">
-              <Link href="/assets" className="text-sm text-primary hover:underline">
-                Manage Assets →
-              </Link>
-              {renderSizeSelect("netWorth")}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {netWorthLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-10 w-48" />
-              <div className="grid grid-cols-5 gap-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-12" />
-                ))}
-              </div>
-            </div>
-          ) : netWorth ? (
-            <div>
-              <div className="mb-4">
-                <div
-                  className={`font-bold ${
-                    cardSizes.netWorth === "small"
-                      ? "text-2xl"
-                      : cardSizes.netWorth === "large"
-                        ? "text-4xl"
-                        : "text-3xl"
-                  }`}
-                >
-                  {formatCurrency(netWorth.netEquity)}
-                </div>
-                <div className={`text-muted-foreground ${cardSizes.netWorth === "small" ? "text-xs" : "text-sm"}`}>
-                  Assets: {formatCurrency(netWorth.totalNetWorth)} | Liabilities: {formatCurrency(netWorth.totalLiabilities)}
-                </div>
-              </div>
-              {cardSizes.netWorth !== "small" && (() => {
-                const categories = [
-                  { label: "Stocks & ETFs", value: netWorth.stocksAndETFs, icon: TrendingUp, color: "text-blue-500", bgColor: "bg-blue-500" },
-                  { label: "Real Estate", value: netWorth.realEstate, icon: Home, color: "text-green-500", bgColor: "bg-green-500" },
-                  { label: "Crypto", value: netWorth.crypto, icon: Bitcoin, color: "text-orange-500", bgColor: "bg-orange-500" },
-                  { label: "Collectibles", value: netWorth.collectibles, icon: Gem, color: "text-purple-500", bgColor: "bg-purple-500" },
-                  { label: "Alt Investments", value: netWorth.alternativeInvestments, icon: Briefcase, color: "text-cyan-500", bgColor: "bg-cyan-500" },
-                ];
-                const visibleCategories =
-                  cardSizes.netWorth === "medium" ? categories.slice(0, 3) : categories;
+      <TooltipProvider>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={cardOrder} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {cardOrder.map((id) => {
+                const wrapperClass = `col-span-1 ${cardSpanClasses[id][cardSizes[id]]} ${cardHeightClasses[id][cardSizes[id]]}`;
                 return (
-                  <div
-                    className={`grid gap-3 ${
-                      cardSizes.netWorth === "large"
-                        ? "grid-cols-2 md:grid-cols-5"
-                        : "grid-cols-2 sm:grid-cols-3"
-                    }`}
-                  >
-                    {visibleCategories.map((cat) => {
-                      const percentage = netWorth.totalNetWorth > 0 
-                        ? (cat.value / netWorth.totalNetWorth) * 100 
-                        : 0;
-                      return (
-                        <div key={cat.label} className="p-2 rounded-lg bg-muted/50">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <cat.icon className={`h-3.5 w-3.5 ${cat.color}`} />
-                            <span className="text-xs text-muted-foreground truncate">{cat.label}</span>
-                          </div>
-                          <div className={`font-semibold ${cardSizes.netWorth === "medium" ? "text-xs" : "text-sm"}`}>
-                            {formatCurrency(cat.value)}
-                          </div>
-                          <Progress value={percentage} className={`mt-1 ${cardSizes.netWorth === "medium" ? "h-0.5" : "h-1"}`} />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <SortableCard key={id} id={id} className={wrapperClass}>
+                    {(dragHandle) => renderCard(id, dragHandle)}
+                  </SortableCard>
                 );
-              })()}
+              })}
             </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className={`col-span-1 ${cardSpanClasses.portfolioMetrics[cardSizes.portfolioMetrics]} ${cardHeightClasses.portfolioMetrics[cardSizes.portfolioMetrics]}`}>
-          <PortfolioMetricsCards
-            metrics={metrics}
-            holdings={holdings}
-            isLoading={metricsLoading}
-            size={cardSizes.portfolioMetrics}
-            sizeSelector={renderSizeSelect("portfolioMetrics")}
-            cardClassName="h-full"
-          />
-        </div>
-        <div className={`col-span-1 ${cardSpanClasses.benchmark[cardSizes.benchmark]} ${cardHeightClasses.benchmark[cardSizes.benchmark]}`}>
-          <BenchmarkChart 
-            data={benchmark} 
-            chartData={benchmarkChart}
-            isLoading={benchmarkLoading || benchmarkChartLoading} 
-            timeframe={timeframe} 
-            size={cardSizes.benchmark}
-            sizeSelector={renderSizeSelect("benchmark")}
-            cardClassName="h-full"
-          />
-        </div>
-        <div className={`col-span-1 ${cardSpanClasses.holdings[cardSizes.holdings]} ${cardHeightClasses.holdings[cardSizes.holdings]}`}>
-          <HoldingsTable
-            holdings={holdings}
-            isLoading={holdingsLoading}
-            timeframe={timeframe}
-            size={cardSizes.holdings}
-            sizeSelector={renderSizeSelect("holdings")}
-            cardClassName="h-full"
-          />
-        </div>
-        <div className={`col-span-1 ${cardSpanClasses.goalProgression[cardSizes.goalProgression]} ${cardHeightClasses.goalProgression[cardSizes.goalProgression]}`}>
-          <GoalProgression
-            size={cardSizes.goalProgression}
-            sizeSelector={renderSizeSelect("goalProgression")}
-            cardClassName="h-full"
-          />
-        </div>
-        <div className={`col-span-1 ${cardSpanClasses.budgetOverview[cardSizes.budgetOverview]} ${cardHeightClasses.budgetOverview[cardSizes.budgetOverview]}`}>
-          <BudgetPieChart
-            size={cardSizes.budgetOverview}
-            sizeSelector={renderSizeSelect("budgetOverview")}
-            cardClassName="h-full"
-          />
-        </div>
-        <div className={`col-span-1 ${cardSpanClasses.recentTransactions[cardSizes.recentTransactions]} ${cardHeightClasses.recentTransactions[cardSizes.recentTransactions]}`}>
-          <RecentTransactions
-            size={cardSizes.recentTransactions}
-            sizeSelector={renderSizeSelect("recentTransactions")}
-            cardClassName="h-full"
-          />
-        </div>
-      </div>
+          </SortableContext>
+        </DndContext>
+      </TooltipProvider>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Maximize2, Minimize2 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { Area, AreaChart, Line, LineChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import type { BenchmarkData } from "@shared/schema";
 
 type Timeframe = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "3Y" | "5Y" | "MAX" | string;
@@ -29,6 +29,11 @@ interface BenchmarkChartProps {
   size?: "small" | "medium" | "large";
   sizeSelector?: ReactNode;
   cardClassName?: string;
+
+  // Optional header KPIs for the default (portfolio performance) card
+  totalValue?: number;
+  dailyChange?: number;
+  dailyChangePercent?: number;
 }
 
 function ChartSkeleton() {
@@ -199,10 +204,45 @@ const COLORS = [
   "hsl(280 50% 50%)",
 ];
 
-export function BenchmarkChart({ data, chartData, categoryData, isLoading, timeframe, title, isExpanded, onExpandClick, noCard = false, returnType = "TWR", size = "medium", sizeSelector, cardClassName }: BenchmarkChartProps) {
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatRoundedK(value: number, step: number = 5000): string {
+  if (!Number.isFinite(value)) return "0K";
+  const rounded = Math.round(value / step) * step;
+  const sign = rounded < 0 ? "-" : "";
+  const abs = Math.abs(rounded);
+  const k = Math.round(abs / 1000);
+  return `${sign}${k}K`;
+}
+
+export function BenchmarkChart({
+  data,
+  chartData,
+  categoryData,
+  isLoading,
+  timeframe,
+  title,
+  isExpanded,
+  onExpandClick,
+  noCard = false,
+  returnType = "TWR",
+  size = "medium",
+  sizeSelector,
+  cardClassName,
+  totalValue,
+  dailyChange,
+  dailyChangePercent,
+}: BenchmarkChartProps) {
   // If categoryData is provided or noCard is true, don't use S&P 500 default title
   // Use provided title or empty string (when noCard=true, title should be empty to avoid showing header)
-  const chartTitle = (categoryData || noCard) ? (title || "") : (title || "Portfolio vs S&P 500 Benchmark");
+  const chartTitle = (categoryData || noCard) ? (title || "") : (title || "Portfolio Performance");
   const chartHeightClass = size === "small" ? "h-[160px]" : size === "large" ? "h-[260px]" : "h-[200px]";
   const statCardPadding = size === "small" ? "p-2" : size === "large" ? "p-4" : "p-3";
 
@@ -393,27 +433,47 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
     );
   }
 
-  // Use real chart data if available, otherwise generate from growth rates
-  // Both should already be indexed to 0
-  const displayChartData = chartData 
-    ? chartData.portfolio.map((p, i) => ({
+  // Use real chart data if available, otherwise generate from growth rates.
+  // `percentSeries` is indexed to 0 (percent change).
+  const percentSeries: Array<{ date: string; portfolio: number }> = chartData
+    ? chartData.portfolio.map((p) => ({
         date: p.date,
         portfolio: p.value,
-        spy: chartData.spy[i]?.value || 0,
       }))
-    : generateTimeSeriesData(data.portfolioGrowth, data.spyGrowth, timeframe);
+    : generateTimeSeriesData(data.portfolioGrowth, data.spyGrowth, timeframe).map((d) => ({
+        date: d.date,
+        portfolio: d.portfolio,
+      }));
+
+  // Convert the percent-index series into dollars using `totalValue` so the chart ends at the
+  // current portfolio value.
+  const showDollars = typeof totalValue === "number" && Number.isFinite(totalValue) && totalValue > 0;
+  const displayChartData: Array<{ date: string; portfolio: number }> = showDollars
+    ? (() => {
+        const endPct = percentSeries.length > 0 ? percentSeries[percentSeries.length - 1].portfolio : 0;
+        const denom = 1 + endPct / 100;
+        const baseValue = denom !== 0 ? totalValue / denom : totalValue;
+        return percentSeries.map((p) => ({
+          date: p.date,
+          portfolio: baseValue * (1 + p.portfolio / 100),
+        }));
+      })()
+    : percentSeries;
   
-  // Calculate performance for the selected timeframe from chart data (indexed to 0)
-  // Since data is already indexed to 0, the end value IS the performance percentage
-  const portfolioStart = displayChartData.length > 0 ? displayChartData[0].portfolio : 0;
-  const portfolioEnd = displayChartData.length > 0 ? displayChartData[displayChartData.length - 1].portfolio : data.portfolioGrowth;
-  const spyStart = displayChartData.length > 0 ? displayChartData[0].spy : 0;
-  const spyEnd = displayChartData.length > 0 ? displayChartData[displayChartData.length - 1].spy : data.spyGrowth;
+  // Calculate performance for the selected timeframe from the percent series (indexed to 0).
+  // Since data is already indexed to 0, the end value IS the performance percentage.
+  const portfolioStart = percentSeries.length > 0 ? percentSeries[0].portfolio : 0;
+  const portfolioEnd =
+    percentSeries.length > 0 ? percentSeries[percentSeries.length - 1].portfolio : data.portfolioGrowth;
   const portfolioPerformance = portfolioEnd - portfolioStart;
-  const spyPerformance = spyEnd - spyStart;
-  
-  const outperforming = portfolioPerformance > spyPerformance;
-  const difference = portfolioPerformance - spyPerformance;
+  const isMonthlyTrendPositive = portfolioPerformance >= 0;
+  const trendColor = isMonthlyTrendPositive ? "hsl(142 50% 45%)" : "hsl(var(--destructive))";
+
+  const portfolioDollarStart = showDollars && displayChartData.length > 0 ? displayChartData[0].portfolio : null;
+  const portfolioDollarEnd =
+    showDollars && displayChartData.length > 0 ? displayChartData[displayChartData.length - 1].portfolio : null;
+  const portfolioDollarChange =
+    portfolioDollarStart !== null && portfolioDollarEnd !== null ? portfolioDollarEnd - portfolioDollarStart : null;
 
   // Helper to format timeframe label for display
   const timeframeLabel: Record<Timeframe, string> = {
@@ -431,93 +491,134 @@ export function BenchmarkChart({ data, chartData, categoryData, isLoading, timef
   return (
     <Card className={cardClassName}>
       <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <CardTitle>Portfolio vs S&P 500</CardTitle>
-          <div className="flex items-center gap-3">
-            {size !== "small" && (
-              <div className={`text-sm font-medium ${outperforming ? "text-chart-1" : "text-chart-4"}`}>
-                {outperforming ? "Outperforming" : "Underperforming"} by {Math.abs(difference).toFixed(2)}%
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="truncate">{chartTitle}</CardTitle>
+            {typeof totalValue === "number" && typeof dailyChange === "number" && typeof dailyChangePercent === "number" && (
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <div className={`font-bold tabular-nums ${size === "small" ? "text-lg" : size === "large" ? "text-3xl" : "text-2xl"}`}>
+                  {formatCurrency(totalValue)}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`text-sm font-semibold tabular-nums ${dailyChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                    {dailyChange >= 0 ? "+" : "-"}{formatCurrency(Math.abs(dailyChange))}
+                  </div>
+                  <div className={`text-xs tabular-nums ${dailyChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                    ({dailyChangePercent >= 0 ? "+" : ""}{dailyChangePercent.toFixed(2)}%)
+                  </div>
+                  <span className="text-xs text-muted-foreground">today</span>
+                </div>
+                {size !== "small" && (
+                  <div className="flex items-center gap-2">
+                    <div className={`text-sm font-semibold tabular-nums ${portfolioPerformance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                      {portfolioPerformance >= 0 ? "+" : ""}{portfolioPerformance.toFixed(2)}%
+                    </div>
+                    {portfolioDollarChange !== null && (
+                      <div className={`text-xs tabular-nums ${portfolioDollarChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                        ({portfolioDollarChange >= 0 ? "+" : "-"}{formatCurrency(Math.abs(portfolioDollarChange))})
+                      </div>
+                    )}
+                    <span className="text-xs text-muted-foreground">1M</span>
+                  </div>
+                )}
               </div>
             )}
-            {sizeSelector}
           </div>
+          {sizeSelector}
         </div>
       </CardHeader>
       <CardContent>
-        <div className={chartHeightClass}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={displayChartData}
-              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: "hsl(var(--muted-foreground))" }}
-                axisLine={{ stroke: "hsl(var(--border))" }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fill: "hsl(var(--muted-foreground))" }}
-                axisLine={{ stroke: "hsl(var(--border))" }}
-                tickFormatter={(value) => `${value >= 0 ? "+" : ""}${value.toFixed(0)}%`}
-                domain={[
-                  (dataMin: number) => {
-                    const allValues = displayChartData.flatMap(d => [d.portfolio, d.spy]);
-                    const min = Math.min(...allValues, 0);
-                    return min < 0 ? min * 1.1 : 0;
-                  },
-                  (dataMax: number) => {
-                    const allValues = displayChartData.flatMap(d => [d.portfolio, d.spy]);
-                    const max = Math.max(...allValues, 0);
-                    return max > 0 ? max * 1.1 : 'auto';
-                  },
-                ]}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  borderColor: "hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                }}
-                labelStyle={{ color: "hsl(var(--foreground))" }}
-                    formatter={(value: number, name: string) => [`${value >= 0 ? "+" : ""}${value.toFixed(2)}%`, name === "portfolio" ? "Portfolio" : "S&P 500"]}
-              />
-              <Legend 
-                wrapperStyle={{ paddingTop: "20px" }}
-                iconType="line"
-              />
-              <Line
-                type="monotone"
-                dataKey="portfolio"
-                stroke="hsl(var(--chart-1))"
-                strokeWidth={2}
-                dot={false}
-                name="Portfolio"
-              />
-              <Line
-                type="monotone"
-                dataKey="spy"
-                stroke="hsl(var(--chart-4))"
-                strokeWidth={2}
-                dot={false}
-                name="S&P 500"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {size === "small" ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 p-3">
+            <div className="min-w-0">
+              <div className="text-xs text-muted-foreground">1M change</div>
+              <div className={`text-lg font-bold tabular-nums ${portfolioPerformance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                {portfolioPerformance >= 0 ? "+" : ""}{portfolioPerformance.toFixed(2)}%
+              </div>
+            </div>
+            {portfolioDollarChange !== null && (
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">approx</div>
+                <div className={`text-sm font-semibold tabular-nums ${portfolioDollarChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                  {portfolioDollarChange >= 0 ? "+" : "-"}{formatCurrency(Math.abs(portfolioDollarChange))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className={chartHeightClass}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={displayChartData}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  tickFormatter={(value) =>
+                    showDollars
+                      ? formatRoundedK(value)
+                      : `${value >= 0 ? "+" : ""}${value.toFixed(0)}%`
+                  }
+                  domain={[
+                    (dataMin: number) => {
+                      const allValues = displayChartData.map((d) => d.portfolio);
+                      const min = Math.min(...allValues);
+                      return min * 0.98;
+                    },
+                    (dataMax: number) => {
+                      const allValues = displayChartData.map((d) => d.portfolio);
+                      const max = Math.max(...allValues);
+                      return max * 1.02;
+                    },
+                  ]}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    borderColor: "hsl(var(--border))",
+                    borderRadius: "var(--radius)",
+                  }}
+                  labelStyle={{ color: "hsl(var(--foreground))" }}
+                  formatter={(value: number) => [
+                    showDollars ? formatRoundedK(value) : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`,
+                    "Portfolio",
+                  ]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="portfolio"
+                  stroke="none"
+                  fill={trendColor}
+                  fillOpacity={0.18}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="portfolio"
+                  stroke={trendColor}
+                  strokeWidth={2}
+                  dot={false}
+                  name="Portfolio"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
         {size === "large" && (
-          <div className={`mt-4 grid grid-cols-2 gap-4 text-center`}>
+          <div className={`mt-4 grid grid-cols-1 gap-4 text-center`}>
             <div className={`${statCardPadding} rounded-lg bg-muted/50`}>
               <div className="text-sm text-muted-foreground">Portfolio {timeframeLabel[timeframe]}</div>
               <div className={`text-xl font-bold tabular-nums ${portfolioPerformance >= 0 ? "text-chart-1" : "text-destructive"}`}>
                 {portfolioPerformance >= 0 ? "+" : ""}{portfolioPerformance.toFixed(2)}%
-              </div>
-            </div>
-            <div className={`${statCardPadding} rounded-lg bg-muted/50`}>
-              <div className="text-sm text-muted-foreground">SPY {timeframeLabel[timeframe]}</div>
-              <div className={`text-xl font-bold tabular-nums ${spyPerformance >= 0 ? "text-chart-4" : "text-destructive"}`}>
-                {spyPerformance >= 0 ? "+" : ""}{spyPerformance.toFixed(2)}%
               </div>
             </div>
           </div>

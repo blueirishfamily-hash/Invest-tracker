@@ -71,6 +71,13 @@ export function RecentTransactions({
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 3);
 
+  const netAcrossThree = size === "large"
+    ? recentTransactions.reduce((sum, txn) => {
+        const amount = Math.abs(txn.amount);
+        return sum + (txn.direction === "credit" ? amount : -amount);
+      }, 0)
+    : 0;
+
   if (recentTransactions.length === 0) {
     return (
       <Card className={cardClassName}>
@@ -135,7 +142,7 @@ export function RecentTransactions({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className={`${size === "small" ? "text-xs" : "text-sm"} font-medium truncate`}>{txn.name}</p>
-                      {size !== "small" && txn.isVerified && (
+                      {size === "large" && txn.isVerified && (
                         <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
                           Verified
                         </Badge>
@@ -143,13 +150,13 @@ export function RecentTransactions({
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className={`${size === "small" ? "text-[10px]" : "text-xs"} text-muted-foreground`}>{formatDate(txn.date)}</p>
-                      {size !== "small" && category && (
+                      {size === "large" && category && (
                         <>
                           <span className="text-xs text-muted-foreground">•</span>
                           <p className={`${size === "small" ? "text-[10px]" : "text-xs"} text-muted-foreground truncate`}>{category.name}</p>
                         </>
                       )}
-                      {size !== "small" && account && (
+                      {size === "large" && account && (
                         <>
                           <span className="text-xs text-muted-foreground">•</span>
                           <p className={`${size === "small" ? "text-[10px]" : "text-xs"} text-muted-foreground truncate`}>{account.name}</p>
@@ -165,6 +172,14 @@ export function RecentTransactions({
             );
           })}
         </div>
+        {size === "large" && recentTransactions.length > 0 && (
+          <div className="mt-4 flex items-center justify-between rounded-lg bg-muted/30 p-3">
+            <div className="text-xs text-muted-foreground">Net across last 3</div>
+            <div className={`text-sm font-semibold tabular-nums ${netAcrossThree >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+              {netAcrossThree >= 0 ? "+" : "-"}{formatCurrency(Math.abs(netAcrossThree))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

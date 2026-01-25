@@ -90,6 +90,7 @@ export function BudgetPieChart({
   const plannedSpending = data.plannedSpendingTotal || 0;
   const savings = data.savingsTotal || 0;
   const safeToSpend = data.safeToSpend || 0;
+  const expectedIncome = data.expectedIncome || 0;
 
   // Pie chart shows 4 aggregated slices:
   // 1. Expenses (all actual expenses)
@@ -141,6 +142,13 @@ export function BudgetPieChart({
     );
   }
 
+  const Stat = ({ label, value }: { label: string; value: number }) => (
+    <div className="rounded-lg bg-muted/30 p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-bold tabular-nums">{formatCurrency(value)}</div>
+    </div>
+  );
+
   return (
     <Card className={cardClassName}>
       <CardHeader>
@@ -153,57 +161,74 @@ export function BudgetPieChart({
           </div>
       </CardHeader>
       <CardContent>
-          <div className={`${size === "small" ? "flex flex-col gap-4" : "flex gap-6"}`}>
-          <ChartContainer
-            config={{
-              income: { label: "Income", color: "hsl(var(--chart-1))" },
-              available: { label: "Safe to Spend", color: "hsl(var(--chart-3))" },
-            }}
-            className={`${size === "small" ? "h-[150px]" : size === "large" ? "h-[220px]" : "h-[175px]"} flex-1`}
-          >
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => {
-                  const pct = (percent * 100).toFixed(0);
-                  // Only show label if slice is large enough
-                  if (size === "small") return "";
-                  return percent > 0.05 ? `${name}: ${pct}%` : "";
-                }}
-                outerRadius={size === "small" ? 50 : size === "large" ? 70 : 60}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-              </Pie>
-              <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />} />
-              {size !== "small" && <Legend wrapperStyle={{ fontSize: "12px" }} />}
-            </PieChart>
-          </ChartContainer>
-          {topCategories.length > 0 && (
-            <div className={`${size === "small" ? "w-full" : size === "large" ? "w-56" : "w-48"} border rounded-lg p-4`}>
-              <h3 className={`font-semibold mb-3 ${size === "small" ? "text-xs" : "text-sm"}`}>Top Expense Categories</h3>
-              <div className={`${size === "small" ? "space-y-1.5" : "space-y-2"}`}>
-                {topCategories.map((cat) => (
-                  <div key={cat.categoryId} className={`flex items-center justify-between ${size === "small" ? "text-[11px]" : "text-xs"}`}>
-                    <div className="flex items-center gap-2">
-                      {cat.color && (
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
-                      )}
-                      <span className="text-muted-foreground truncate">{cat.categoryName}</span>
-                    </div>
-                    <span className="font-medium">{formatCurrency(cat.total)}</span>
-                  </div>
-                ))}
+        {size === "small" ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Expenses" value={expenses} />
+            <Stat label="Safe to Spend" value={safeToSpend} />
+            <Stat label="Savings" value={savings} />
+            <Stat label="Planned" value={plannedSpending} />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {size === "large" && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <Stat label="Income" value={expectedIncome} />
+                <Stat label="Expenses" value={expenses} />
+                <Stat label="Planned" value={plannedSpending} />
+                <Stat label="Safe to Spend" value={safeToSpend} />
               </div>
+            )}
+            <div className="flex gap-6">
+              <ChartContainer
+                config={{
+                  income: { label: "Income", color: "hsl(var(--chart-1))" },
+                  available: { label: "Safe to Spend", color: "hsl(var(--chart-3))" },
+                }}
+                className={`${size === "large" ? "h-[220px]" : "h-[175px]"} flex-1`}
+              >
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => {
+                      const pct = (percent * 100).toFixed(0);
+                      return percent > 0.05 ? `${name}: ${pct}%` : "";
+                    }}
+                    outerRadius={size === "large" ? 70 : 60}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />} />
+                  <Legend wrapperStyle={{ fontSize: "12px" }} />
+                </PieChart>
+              </ChartContainer>
+              {topCategories.length > 0 && (
+                <div className={`${size === "large" ? "w-56" : "w-48"} border rounded-lg p-4`}>
+                  <h3 className={`font-semibold mb-3 ${size === "large" ? "text-sm" : "text-sm"}`}>Top Expense Categories</h3>
+                  <div className="space-y-2">
+                    {topCategories.map((cat) => (
+                      <div key={cat.categoryId} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {cat.color && (
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
+                          )}
+                          <span className="text-muted-foreground truncate">{cat.categoryName}</span>
+                        </div>
+                        <span className="font-medium tabular-nums">{formatCurrency(cat.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

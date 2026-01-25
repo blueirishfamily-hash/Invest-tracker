@@ -113,8 +113,8 @@ export function HoldingsTable({ holdings, isLoading, timeframe, size = "medium",
     );
   }
 
-  // Limit rows based on size
-  const displayHoldings = holdings.slice(0, rowLimit);
+  const sortedHoldings = [...holdings].sort((a, b) => b.currentValue - a.currentValue);
+  const displayHoldings = sortedHoldings.slice(0, rowLimit);
 
   return (
     <Card className={cardClassName}>
@@ -123,44 +123,102 @@ export function HoldingsTable({ holdings, isLoading, timeframe, size = "medium",
         {sizeSelector}
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <Table className={size === "small" ? "text-xs" : "text-sm"}>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ticker</TableHead>
-                {showName && <TableHead>Name</TableHead>}
-                {showQuantity && <TableHead className="text-right">Quantity</TableHead>}
-                {showPrice && <TableHead className="text-right">Price</TableHead>}
-                <TableHead className="text-right">Value</TableHead>
-                <TableHead className="text-right">{timeframeLabels[timeframe]}</TableHead>
-                {showSector && <TableHead>Sector</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {displayHoldings.map((holding) => {
-                const isPositive = holding.growthRate30d >= 0;
-                const logoUrl = getCompanyLogoUrl(holding.ticker, holding.name);
-                return (
-                  <HoldingRow 
-                    key={holding.id} 
-                    holding={holding} 
-                    isPositive={isPositive}
-                    logoUrl={logoUrl}
-                    size={size}
-                    showName={showName}
-                    showQuantity={showQuantity}
-                    showPrice={showPrice}
-                    showSector={showSector}
-                  />
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-        {holdings.length > rowLimit && (
-          <div className={`mt-4 text-center text-muted-foreground ${size === "small" ? "text-xs" : "text-sm"}`}>
-            Showing top {rowLimit} of {holdings.length} holdings
+        {size === "small" ? (
+          <div className="space-y-2">
+            {displayHoldings.map((holding) => {
+              const isPositive = holding.growthRate30d >= 0;
+              const logoUrl = getCompanyLogoUrl(holding.ticker, holding.name);
+              return (
+                <div
+                  key={holding.id}
+                  className="flex items-center justify-between rounded-lg bg-muted/30 p-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="relative flex items-center justify-center rounded bg-primary/10 overflow-hidden shrink-0 h-7 w-7">
+                      <img
+                        src={logoUrl}
+                        alt={`${holding.name} logo`}
+                        className="h-full w-full object-contain p-1"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold font-mono truncate">{holding.ticker}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{holding.name}</div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 pl-2">
+                    <div className="text-xs font-semibold tabular-nums">{formatCurrency(holding.currentValue)}</div>
+                    <div className={`text-[10px] tabular-nums ${isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                      {formatPercent(holding.growthRate30d)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {sortedHoldings.length > rowLimit && (
+              <div className="pt-1 text-center text-[10px] text-muted-foreground">
+                Top {rowLimit} by value (of {sortedHoldings.length})
+              </div>
+            )}
           </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <Table className="text-sm">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ticker</TableHead>
+                    {showName && <TableHead>Name</TableHead>}
+                    {showQuantity && <TableHead className="text-right">Quantity</TableHead>}
+                    {showPrice && <TableHead className="text-right">Price</TableHead>}
+                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead className="text-right">{timeframeLabels[timeframe]}</TableHead>
+                    {showSector && <TableHead>Sector</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayHoldings.map((holding) => {
+                    const isPositive = holding.growthRate30d >= 0;
+                    const logoUrl = getCompanyLogoUrl(holding.ticker, holding.name);
+                    return (
+                      <HoldingRow 
+                        key={holding.id} 
+                        holding={holding} 
+                        isPositive={isPositive}
+                        logoUrl={logoUrl}
+                        size={size}
+                        showName={showName}
+                        showQuantity={showQuantity}
+                        showPrice={showPrice}
+                        showSector={showSector}
+                      />
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            {sortedHoldings.length > rowLimit && (
+              <div className={`mt-4 text-center text-muted-foreground ${size === "medium" ? "text-sm" : "text-sm"}`}>
+                Showing top {rowLimit} of {sortedHoldings.length} holdings
+              </div>
+            )}
+            {size === "large" && (
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="text-xs text-muted-foreground">Displayed value</div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {formatCurrency(displayHoldings.reduce((sum, h) => sum + h.currentValue, 0))}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <div className="text-xs text-muted-foreground">Total holdings value</div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {formatCurrency(sortedHoldings.reduce((sum, h) => sum + h.currentValue, 0))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

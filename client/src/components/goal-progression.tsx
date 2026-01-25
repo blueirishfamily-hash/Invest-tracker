@@ -115,6 +115,11 @@ export function GoalProgression({
             const progress = fund.targetAmount > 0 
               ? Math.min((fund.currentAmount / fund.targetAmount) * 100, 100) 
               : 0;
+            const remaining = Math.max(fund.targetAmount - fund.currentAmount, 0);
+            const monthsRemaining =
+              size === "large" && fund.monthlyContribution > 0 && remaining > 0
+                ? Math.ceil(remaining / fund.monthlyContribution)
+                : null;
             return (
               <div key={fund.id} className="space-y-2">
                 <div className={`flex items-center justify-between ${size === "small" ? "text-xs" : "text-sm"}`}>
@@ -127,9 +132,14 @@ export function GoalProgression({
                 <div className={`flex items-center justify-between text-muted-foreground ${size === "small" ? "text-[10px]" : "text-xs"}`}>
                   <span>{progress.toFixed(0)}% complete</span>
                   {size !== "small" && fund.monthlyContribution > 0 && (
-                    <span>${fund.monthlyContribution.toFixed(0)}/mo</span>
+                    <span className="tabular-nums">${fund.monthlyContribution.toFixed(0)}/mo</span>
                   )}
                 </div>
+                {size === "large" && monthsRemaining !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    Est. <span className="font-medium tabular-nums">{monthsRemaining}</span> mo remaining
+                  </div>
+                )}
               </div>
             );
           })}
