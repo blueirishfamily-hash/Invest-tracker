@@ -454,7 +454,7 @@ export function TransactionsContent() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <span className={txn.direction === "debit" ? "text-destructive" : "text-emerald-600"}>
+                      <span className={txn.direction === "debit" ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}>
                         {formatCurrency(txn.direction === "debit" ? -txn.amount : txn.amount)}
                       </span>
                     </TableCell>

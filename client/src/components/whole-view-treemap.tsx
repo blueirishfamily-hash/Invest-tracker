@@ -75,10 +75,10 @@ function getAssetColor(assetName: string, assetType?: string): string {
   // Use golden ratio multiplier for better distribution
   const goldenRatio = 0.618033988749895;
   const hue = Math.abs(hash1) * goldenRatio % 360;
-  
+
   // Use second hash for saturation - vary between 55% and 85% for more variety
   const saturation = 55 + (Math.abs(hash2) % 30);
-  
+
   // Vary lightness between 45% and 65% for better contrast
   // Use a different calculation from the seed for lightness
   let lightnessHash = 0;
@@ -87,21 +87,29 @@ function getAssetColor(assetName: string, assetType?: string): string {
     lightnessHash = lightnessHash & lightnessHash;
   }
   const lightness = 45 + (Math.abs(lightnessHash) % 20);
-  
+
   return `hsl(${Math.round(hue)}, ${saturation}%, ${lightness}%)`;
 }
 
 // Calculate color intensity for returns/performance mode
 function getColorIntensity(value: number, maxValue: number, isPositive: boolean): string {
   if (maxValue === 0) {
-    return isPositive ? "hsl(142, 65%, 55%)" : "hsl(0, 65%, 55%)";
+    return isPositive ? "hsl(142 70% 45%)" : "hsl(0 84% 60%)";
   }
   const intensity = Math.abs(value) / maxValue;
-  const lightness = 45 - (intensity * 20);
-  const saturation = 65;
-  return isPositive 
-    ? `hsl(142, ${saturation}%, ${Math.max(25, Math.min(45, lightness))}%)`
-    : `hsl(0, ${saturation}%, ${Math.max(25, Math.min(45, lightness))}%)`;
+  const saturation = 70;
+  const lightness = 62 - (intensity * 22); // 62% -> 40%
+  const clamped = Math.max(38, Math.min(62, lightness));
+  return isPositive
+    ? `hsl(142 ${saturation}% ${clamped}%)`
+    : `hsl(0 ${saturation}% ${clamped}%)`;
+}
+
+function getTileTextColor(fill: string): string {
+  // We generate colors as `hsl(H S% L%)` so we can approximate contrast from L%.
+  const match = fill.match(/hsl\(\s*\d+(?:\.\d+)?(?:\s+|,\s*)\d+(?:\.\d+)?%?(?:\s+|,\s*)(\d+(?:\.\d+)?)%/i);
+  const lightness = match ? Number(match[1]) : 60;
+  return lightness < 55 ? "hsl(var(--background))" : "hsl(var(--foreground))";
 }
 
 export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<string> }) {
@@ -265,34 +273,20 @@ export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<
 
   // Create lookup map for colors with locked colors per asset
   const treemapLookup = useMemo(() => {
-    const map = new Map<string, { asset: TreemapAsset; actualValue: number; color: string }>();
+    const map = new Map<string, { asset: TreemapAsset; actualValue: number; color: string; textColor: string }>();
     treemapData.forEach((entry) => {
       const isPositive = entry.actualValue >= 0;
       let color: string;
       
       if (metric === "performance" || metric === "returns") {
-        // For performance/returns mode, use intensity-based coloring with green/red
-        // but blend with locked base hue for asset identification
-        const baseColor = getAssetColor(entry.name, entry.type);
-        const hueMatch = baseColor.match(/hsl\((\d+),/);
-        const baseHue = hueMatch ? parseInt(hueMatch[1]) : 0;
-        
-        // Calculate intensity
-        const intensity = maxAbsValue > 0 ? Math.abs(entry.actualValue) / maxAbsValue : 0;
-        const lightness = 45 - (intensity * 20);
-        const saturation = 65;
-        
-        // Use green (142) for positive, red (0) for negative, but blend slightly with base hue
-        const targetHue = isPositive ? 142 : 0;
-        // Blend: 70% target hue, 30% base hue for slight asset differentiation
-        const blendedHue = Math.round(targetHue * 0.7 + baseHue * 0.3);
-        color = `hsl(${blendedHue}, ${saturation}%, ${Math.max(25, Math.min(45, lightness))}%)`;
+        // Performance/returns: strict green for positive, red for negative (theme-consistent)
+        color = getColorIntensity(entry.actualValue, maxAbsValue, isPositive);
       } else {
-        // For percentage mode, use locked color based on asset name/type
+        // Percentage mode: grayscale, but stable per asset
         color = getAssetColor(entry.name, entry.type);
       }
       
-      map.set(entry.name, { asset: entry, actualValue: entry.actualValue, color });
+      map.set(entry.name, { asset: entry, actualValue: entry.actualValue, color, textColor: getTileTextColor(color) });
     });
     return map;
   }, [treemapData, metric, maxAbsValue]);
@@ -355,8 +349,8 @@ export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<
                 dataKey="value"
                 nameKey="name"
                 aspectRatio={4 / 3}
-                stroke="#fff"
-                fill="#8884d8"
+                stroke="hsl(var(--background))"
+                fill="hsl(var(--muted))"
                 content={(props: any) => {
                   if (!props) return null;
 
@@ -381,6 +375,7 @@ export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<
                   const actualValue = entryFromData?.actualValue ?? payloadData?.actualValue ?? 0;
                   const asset = entryFromData?.asset || payloadData?.asset || {};
                   const fillColor = entryFromData?.color || getFallbackColor(entryName || "asset");
+                  const textColor = entryFromData?.textColor || getTileTextColor(fillColor);
 
                   const showLabels = width >= 40 && height >= 20;
 
@@ -418,7 +413,8 @@ export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<
                         width={width}
                         height={height}
                         fill={fillColor}
-                        stroke="#fff"
+                        stroke="hsl(var(--background))"
+                        strokeWidth={1}
                       />
                       {resolvedEntryName && (
                         <g clipPath={`url(#${clipId})`}>
@@ -426,7 +422,7 @@ export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<
                             x={x + width / 2}
                             y={y + height / 2 - (showLabels ? 8 : 0)}
                             textAnchor="middle"
-                            fill="#000000"
+                            fill={textColor}
                             fontSize={showLabels ? 12 : Math.max(8, Math.min(width / 8, 10))}
                             fontWeight="bold"
                             dominantBaseline="middle"
@@ -439,7 +435,7 @@ export function WholeViewTab({ selectedCategories }: { selectedCategories?: Set<
                               x={x + width / 2}
                               y={y + height / 2 + 8}
                               textAnchor="middle"
-                              fill="#000000"
+                              fill={textColor}
                               fontSize={10}
                               stroke="none"
                             >

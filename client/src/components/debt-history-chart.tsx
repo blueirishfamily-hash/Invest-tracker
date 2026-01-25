@@ -94,6 +94,8 @@ export function DebtHistoryChart({ debtPlans }: DebtHistoryChartProps) {
   const minValue = Math.min(...chartData.map(d => d.totalDebt));
   const maxValue = Math.max(...chartData.map(d => d.totalDebt));
   const padding = (maxValue - minValue) * 0.1;
+  // Use explicit red (not theme destructive) per request
+  const DEBT_RED = "hsl(0 84% 60%)";
 
   return (
     <Card>
@@ -109,8 +111,8 @@ export function DebtHistoryChart({ debtPlans }: DebtHistoryChartProps) {
             <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
               <defs>
                 <linearGradient id="debtGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="hsl(var(--destructive))" stopOpacity={0.05} />
+                  <stop offset="0%" stopColor={DEBT_RED} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={DEBT_RED} stopOpacity={0.05} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -146,10 +148,10 @@ export function DebtHistoryChart({ debtPlans }: DebtHistoryChartProps) {
               <Area
                 type="monotone"
                 dataKey="totalDebt"
-                stroke="hsl(var(--destructive))"
+                stroke={DEBT_RED}
                 strokeWidth={2}
                 fill="url(#debtGradient)"
-                dot={{ fill: "hsl(var(--destructive))", r: 3 }}
+                dot={{ fill: DEBT_RED, r: 3 }}
                 activeDot={{ r: 5 }}
               />
             </AreaChart>

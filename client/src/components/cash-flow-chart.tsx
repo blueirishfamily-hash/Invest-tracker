@@ -95,6 +95,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
   const bills = data.upcomingBills || [];
   const subscriptions = data.upcomingSubscriptions || [];
   const incomeSourcesData = data.incomeSources || [];
+  const INCOME_BUDGET_GREEN = "hsl(142 70% 55%)";
 
   if (income === 0) {
     return (
@@ -107,7 +108,8 @@ function SankeyChart({ data }: { data: CashFlowData }) {
   // Filter zero-value income sources
   let validIncomeSources = incomeSourcesData.filter(s => s.amount > 0);
   if (validIncomeSources.length === 0) {
-    validIncomeSources = [{ id: 'income-0', name: 'Income', amount: income }];
+    // Label fix: placeholder should describe an inbound income source, not the aggregate node
+    validIncomeSources = [{ id: 'income-0', name: 'Other Income', amount: income }];
   }
 
   // Build category map for grouping and color lookup
@@ -626,7 +628,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           <path
             key={`income-to-total-${index}`}
             d={path}
-            fill="hsl(var(--chart-1))"
+            fill={INCOME_BUDGET_GREEN}
             opacity="0.8"
             filter="url(#shadow)"
           />
@@ -635,7 +637,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
         {/* Flow 2: Total Income → Budget */}
         <path
           d={totalIncomeToBudgetPath}
-          fill="hsl(var(--chart-1))"
+          fill={INCOME_BUDGET_GREEN}
           opacity="0.8"
           filter="url(#shadow)"
         />
@@ -680,7 +682,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
               y={source.y}
               width={nodeWidth}
               height={source.height}
-              fill="hsl(var(--chart-1))"
+              fill={INCOME_BUDGET_GREEN}
               rx="4"
               filter="url(#shadow)"
             />
@@ -714,7 +716,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           y={col2Y}
           width={nodeWidth}
           height={col2Height}
-          fill="hsl(var(--chart-1))"
+          fill={INCOME_BUDGET_GREEN}
           rx="4"
           filter="url(#shadow)"
         />
@@ -746,7 +748,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
           y={col3Y}
           width={nodeWidth}
           height={col3Height}
-          fill="hsl(var(--chart-1))"
+          fill={INCOME_BUDGET_GREEN}
           rx="4"
           filter="url(#shadow)"
         />
