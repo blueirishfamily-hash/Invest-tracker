@@ -51,9 +51,9 @@ export function BubbleWatchAlerts({ warnings, isLoading }: BubbleWatchProps) {
       </CardHeader>
       <CardContent>
         {activeWarnings.length === 0 ? (
-          <Alert className="border-chart-1 bg-chart-1/10">
-            <CheckCircle className="h-4 w-4 text-chart-1" />
-            <AlertTitle className="text-chart-1">All Clear</AlertTitle>
+          <Alert className="border-positive bg-positive/10">
+            <CheckCircle className="h-4 w-4 text-positive" />
+            <AlertTitle className="text-positive">All Clear</AlertTitle>
             <AlertDescription className="text-muted-foreground">
               No sectors are currently showing signs of overheating. Your portfolio appears balanced.
             </AlertDescription>
@@ -64,11 +64,11 @@ export function BubbleWatchAlerts({ warnings, isLoading }: BubbleWatchProps) {
               <Alert
                 key={warning.industry}
                 variant="destructive"
-                className="border-chart-4 bg-chart-4/10"
+                className="border-warning bg-warning/10"
                 data-testid={`alert-bubble-${index}`}
               >
                 <AlertTriangle className="h-4 w-4" />
-                <AlertTitle className="text-chart-4 font-semibold">
+                <AlertTitle className="text-warning font-semibold">
                   {warning.industry} Sector Alert
                 </AlertTitle>
                 <AlertDescription>
@@ -93,7 +93,7 @@ export function BubbleWatchAlerts({ warnings, isLoading }: BubbleWatchProps) {
                           <TrendingUp className="h-3 w-3" />
                           Sector Growth (30D)
                         </div>
-                        <div className="text-lg font-semibold text-chart-4 tabular-nums">
+                        <div className="text-lg font-semibold text-warning tabular-nums">
                           +{warning.growthRate.toFixed(2)}%
                         </div>
                       </div>
@@ -134,9 +134,9 @@ export function BubbleWatchCompact({ warnings, isLoading }: BubbleWatchProps) {
   }
 
   return (
-    <Alert variant="destructive" className="border-chart-4 bg-chart-4/10">
+    <Alert variant="destructive" className="border-warning bg-warning/10">
       <AlertTriangle className="h-4 w-4" />
-      <AlertTitle className="text-chart-4">Bubble Watch Alert</AlertTitle>
+      <AlertTitle className="text-warning">Bubble Watch Alert</AlertTitle>
       <AlertDescription className="text-muted-foreground">
         {activeWarnings.length} sector{activeWarnings.length > 1 ? "s" : ""} showing signs of overheating:{" "}
         <span className="font-medium">

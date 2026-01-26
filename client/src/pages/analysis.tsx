@@ -192,7 +192,7 @@ export default function Analysis() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Top Performer
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-chart-1" />
+            <TrendingUp className="h-4 w-4 text-positive" />
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -202,7 +202,7 @@ export default function Analysis() {
                 <div className="text-lg font-semibold truncate" data-testid="text-top-performer-name">
                   {getCategoryName(topPerformer)}
                 </div>
-                <p className="text-chart-1 text-sm font-medium tabular-nums" data-testid="text-top-performer-growth">
+                <p className="text-positive text-sm font-medium tabular-nums" data-testid="text-top-performer-growth">
                   {formatPercent(topPerformer.averageGrowth)}
                 </p>
               </>
@@ -228,7 +228,7 @@ export default function Analysis() {
                   {getCategoryName(bottomPerformer)}
                 </div>
                 <p 
-                  className={`text-sm font-medium tabular-nums ${bottomPerformer.averageGrowth >= 0 ? "text-chart-1" : "text-destructive"}`}
+                  className={`text-sm font-medium tabular-nums ${bottomPerformer.averageGrowth >= 0 ? "text-positive" : "text-destructive"}`}
                   data-testid="text-bottom-performer-growth"
                 >
                   {formatPercent(bottomPerformer.averageGrowth)}
@@ -486,8 +486,8 @@ export default function Analysis() {
           ) : (
             <div className="space-y-4">
               {mostConcentrated && mostConcentrated.percentage > 30 && (
-                <div className="p-4 rounded-lg bg-chart-4/10 border border-chart-4/20" data-testid="insight-concentration">
-                  <h4 className="font-medium mb-1 text-chart-4">Concentration Risk</h4>
+                <div className="p-4 rounded-lg bg-warning/10 border border-warning/20" data-testid="insight-concentration">
+                  <h4 className="font-medium mb-1 text-warning">Concentration Risk</h4>
                   <p className="text-sm text-muted-foreground">
                     {getCategoryName(mostConcentrated)} represents {mostConcentrated.percentage.toFixed(1)}% of your portfolio.
                     Consider rebalancing to reduce concentration risk.

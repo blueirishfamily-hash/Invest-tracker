@@ -85,7 +85,7 @@ function StockItem({
           <p className="text-sm text-muted-foreground truncate">{stock.name}</p>
         </div>
       </div>
-      <div className={`flex items-center gap-2 ${isPositive ? "text-chart-1" : "text-destructive"}`}>
+      <div className={`flex items-center gap-2 ${isPositive ? "text-positive" : "text-destructive"}`}>
         {isPositive ? (
           <TrendingUp className="h-4 w-4 shrink-0" />
         ) : (
@@ -233,9 +233,9 @@ export function TopStocks({ timeframe }: TopStocksProps) {
       {/* Top Gainers and Losers Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Gainers Card */}
-        <Card className="border-chart-1/20">
+        <Card className="border-positive/20">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-chart-1">
+            <CardTitle className="flex items-center gap-2 text-positive">
               <TrendingUp className="h-5 w-5" />
               Top 5 Gainers
             </CardTitle>

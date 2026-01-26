@@ -99,7 +99,7 @@ function HoldingCard({ holding }: { holding: Holding }) {
           <div>
             <p className="text-xs text-muted-foreground">Gain/Loss</p>
             <p 
-              className={`text-sm font-medium tabular-nums ${gainLoss >= 0 ? "text-chart-1" : "text-destructive"}`}
+              className={`text-sm font-medium tabular-nums ${gainLoss >= 0 ? "text-positive" : "text-destructive"}`}
               data-testid={`text-gainloss-${holding.ticker}`}
             >
               {formatCurrency(gainLoss)} ({formatPercent(gainLossPercent)})
@@ -108,7 +108,7 @@ function HoldingCard({ holding }: { holding: Holding }) {
           <div className="text-right">
             <p className="text-xs text-muted-foreground">30D Change</p>
             <div 
-              className={`flex items-center justify-end gap-1 ${isPositive ? "text-chart-1" : "text-destructive"}`}
+              className={`flex items-center justify-end gap-1 ${isPositive ? "text-positive" : "text-destructive"}`}
               data-testid={`text-change-${holding.ticker}`}
             >
               {isPositive ? (

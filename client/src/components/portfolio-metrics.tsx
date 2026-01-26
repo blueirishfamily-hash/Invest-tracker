@@ -98,18 +98,18 @@ export function PortfolioMetricsCards({ metrics, holdings, isLoading, size = "me
             {formatCurrency(metrics.totalValue)}
           </div>
           <div className={`flex items-center gap-2 ${size === "small" ? "mt-1" : "mt-2"}`}>
-            <div className={`font-medium tabular-nums ${size === "small" ? "text-xs" : "text-sm"} ${isPositiveChange ? "text-chart-1" : "text-destructive"}`}>
+            <div className={`font-medium tabular-nums ${size === "small" ? "text-xs" : "text-sm"} ${isPositiveChange ? "text-positive" : "text-destructive"}`}>
               {isPositiveChange ? "+" : ""}{formatCurrency(dailyChange)}
             </div>
             {size !== "small" && (
-              <div className={`tabular-nums ${size === "small" ? "text-[10px]" : "text-xs"} ${isPositiveChange ? "text-chart-1" : "text-destructive"}`}>
+              <div className={`tabular-nums ${size === "small" ? "text-[10px]" : "text-xs"} ${isPositiveChange ? "text-positive" : "text-destructive"}`}>
                 ({isPositiveChange ? "+" : ""}{dailyChangePercent.toFixed(2)}%)
               </div>
             )}
             {size === "large" && (
               <>
                 {isPositiveChange ? (
-                  <TrendingUp className="h-3 w-3 text-chart-1" />
+                  <TrendingUp className="h-3 w-3 text-positive" />
                 ) : (
                   <TrendingDown className="h-3 w-3 text-destructive" />
                 )}

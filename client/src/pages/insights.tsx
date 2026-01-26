@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SEO } from "@/components/seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle } from "lucide-react";
 
 const formatCurrency = (value: number) =>
@@ -11,6 +11,13 @@ const formatCurrency = (value: number) =>
     currency: "USD",
     minimumFractionDigits: 0,
   }).format(value);
+
+function formatMonthLabel(month: string): string {
+  // Expects YYYY-MM
+  const [y, m] = month.split("-");
+  const date = new Date(Number(y), Math.max(0, Number(m) - 1), 1);
+  return date.toLocaleDateString("en-US", { month: "short" });
+}
 
 export function InsightsContent() {
   const { data: analytics } = useQuery<any>({
@@ -29,16 +36,18 @@ export function InsightsContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Monthly Spending Trend</CardTitle>
-          <CardDescription>Rolling 6-month overview.</CardDescription>
+          <CardTitle>Net Income</CardTitle>
+          <CardDescription>Income (green) vs expenses (red), rolling 6-month overview.</CardDescription>
         </CardHeader>
         <CardContent className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={analytics?.monthly || []}>
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
-              <Bar dataKey="total" fill="hsl(var(--primary))" />
+              <XAxis dataKey="month" tickFormatter={formatMonthLabel} />
+              <YAxis tickFormatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number) => formatCurrency(Number(value))} />
+              <Legend />
+              <Bar dataKey="income" name="Income" fill="hsl(142 70% 45%)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="expenses" name="Expenses" fill="hsl(0 84% 60%)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>

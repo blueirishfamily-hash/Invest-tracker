@@ -314,19 +314,19 @@ export function CryptoTab() {
               Total Gain/Loss
             </CardTitle>
             {portfolioMetrics.totalGainLoss >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-chart-1" />
+              <TrendingUp className="h-4 w-4 text-positive" />
             ) : (
               <TrendingDown className="h-4 w-4 text-destructive" />
             )}
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold tabular-nums ${
-              portfolioMetrics.totalGainLoss >= 0 ? "text-chart-1" : "text-destructive"
+              portfolioMetrics.totalGainLoss >= 0 ? "text-positive" : "text-destructive"
             }`}>
               {formatCurrency(portfolioMetrics.totalGainLoss)}
             </div>
             <p className={`text-xs mt-1 ${
-              portfolioMetrics.totalGainLoss >= 0 ? "text-chart-1" : "text-destructive"
+              portfolioMetrics.totalGainLoss >= 0 ? "text-positive" : "text-destructive"
             }`}>
               {formatPercent(portfolioMetrics.totalGainLossPercent)}
             </p>
@@ -338,7 +338,7 @@ export function CryptoTab() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Top Performer
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-chart-1" />
+            <TrendingUp className="h-4 w-4 text-positive" />
           </CardHeader>
           <CardContent>
             {topPerformer ? (
@@ -346,7 +346,7 @@ export function CryptoTab() {
                 <div className="text-lg font-semibold truncate">
                   {topPerformer.symbol}
                 </div>
-                <p className="text-chart-1 text-sm font-medium tabular-nums">
+                <p className="text-positive text-sm font-medium tabular-nums">
                   {formatPercent(
                     topPerformer.costBasis > 0
                       ? ((topPerformer.currentValue - topPerformer.costBasis) / topPerformer.costBasis) * 100
@@ -618,12 +618,12 @@ export function CryptoTab() {
                         </TableCell>
                         <TableCell>
                           <div className={`tabular-nums font-medium ${
-                            gainLoss >= 0 ? "text-chart-1" : "text-destructive"
+                            gainLoss >= 0 ? "text-positive" : "text-destructive"
                           }`}>
                             {formatCurrency(gainLoss)}
                           </div>
                           <div className={`text-xs ${
-                            gainLoss >= 0 ? "text-chart-1" : "text-destructive"
+                            gainLoss >= 0 ? "text-positive" : "text-destructive"
                           }`}>
                             {formatPercent(gainLossPercent)}
                           </div>
@@ -716,12 +716,12 @@ export function CryptoTab() {
                         {formatCurrency(coin.current_price)}
                       </TableCell>
                       <TableCell className={`tabular-nums ${
-                        coin.price_change_percentage_24h >= 0 ? "text-chart-1" : "text-destructive"
+                        coin.price_change_percentage_24h >= 0 ? "text-positive" : "text-destructive"
                       }`}>
                         {formatPercent(coin.price_change_percentage_24h)}
                       </TableCell>
                       <TableCell className={`tabular-nums ${
-                        coin.price_change_percentage_7d_in_currency >= 0 ? "text-chart-1" : "text-destructive"
+                        coin.price_change_percentage_7d_in_currency >= 0 ? "text-positive" : "text-destructive"
                       }`}>
                         {coin.price_change_percentage_7d_in_currency
                           ? formatPercent(coin.price_change_percentage_7d_in_currency)

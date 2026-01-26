@@ -130,7 +130,7 @@ export function CryptoChart({ asset, timeframe }: CryptoChartProps) {
         <div>
           <div className="text-2xl font-bold tabular-nums">{formatCurrency(asset.currentPrice)}</div>
           <div className={`text-sm font-medium tabular-nums ${
-            priceChange >= 0 ? "text-chart-1" : "text-destructive"
+            priceChange >= 0 ? "text-positive" : "text-destructive"
           }`}>
             {priceChange >= 0 ? "+" : ""}{formatCurrency(priceChange)} ({formatPercent(priceChangePercent)})
           </div>

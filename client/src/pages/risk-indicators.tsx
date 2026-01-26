@@ -25,7 +25,7 @@ function getScoreColor(score: number): string {
   if (score <= 45) return "text-orange-500"; // Fear - orange
   if (score <= 55) return "text-yellow-500"; // Neutral - yellow
   if (score <= 75) return "text-green-500"; // Greed - green
-  return "text-emerald-600"; // Extreme Greed - dark green
+  return "text-positive"; // Extreme Greed - semantic positive
 }
 
 /**
@@ -36,7 +36,7 @@ function getProgressColor(score: number): string {
   if (score <= 45) return "bg-orange-500"; // Fear - orange
   if (score <= 55) return "bg-yellow-500"; // Neutral - yellow
   if (score <= 75) return "bg-green-500"; // Greed - green
-  return "bg-emerald-600"; // Extreme Greed - dark green
+  return "bg-positive"; // Extreme Greed - semantic positive
 }
 
 /**
@@ -226,7 +226,7 @@ export function RiskIndicatorsContent() {
                             ? "stroke-yellow-500"
                             : fearGreed.score <= 75
                             ? "stroke-green-500"
-                            : "stroke-emerald-600"
+                            : "stroke-positive"
                         }`}
                       />
                     </svg>
@@ -391,7 +391,7 @@ export function RiskIndicatorsContent() {
                         ? "text-destructive"
                         : vixData.current >= 20
                         ? "text-orange-500"
-                        : "text-chart-1"
+                      : "text-positive"
                     }`}>
                       {vixData.current.toFixed(2)}
                     </div>
@@ -403,7 +403,7 @@ export function RiskIndicatorsContent() {
                   </CardHeader>
                   <CardContent>
                     <div className={`text-3xl font-bold tabular-nums flex items-center gap-2 ${
-                      vixData.change >= 0 ? "text-destructive" : "text-chart-1"
+                      vixData.change >= 0 ? "text-destructive" : "text-positive"
                     }`}>
                       {vixData.change >= 0 ? (
                         <TrendingUp className="h-5 w-5" />
@@ -421,7 +421,7 @@ export function RiskIndicatorsContent() {
                   </CardHeader>
                   <CardContent>
                     <div className={`text-3xl font-bold tabular-nums ${
-                      vixData.changePercent >= 0 ? "text-destructive" : "text-chart-1"
+                      vixData.changePercent >= 0 ? "text-destructive" : "text-positive"
                     }`}>
                       {vixData.changePercent >= 0 ? "+" : ""}
                       {vixData.changePercent.toFixed(2)}%

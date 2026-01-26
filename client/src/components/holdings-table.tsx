@@ -286,7 +286,7 @@ function HoldingRow({
       <TableCell className="text-right">
         <div
           className={`flex items-center justify-end gap-1 ${
-            isPositive ? "text-chart-1" : "text-destructive"
+            isPositive ? "text-positive" : "text-destructive"
           }`}
         >
           {size !== "small" && (isPositive ? (

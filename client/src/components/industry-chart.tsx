@@ -25,15 +25,18 @@ interface IndustryChartProps {
   timeframe?: string;
 }
 
+// Sector/category differentiation palette (intentionally colorful; exempt from base theme).
+// Avoids theme `--chart-*` tokens so it won’t collapse into grayscale.
+// Also avoids the app’s semantic trend colors (green/red) to reduce confusion.
 const COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(142 50% 45%)",
-  "hsl(200 60% 50%)",
-  "hsl(280 50% 50%)",
+  "hsl(210 90% 56%)", // blue
+  "hsl(190 85% 50%)", // cyan
+  "hsl(165 70% 45%)", // teal
+  "hsl(45 90% 55%)",  // amber
+  "hsl(25 90% 55%)",  // orange
+  "hsl(275 80% 62%)", // violet
+  "hsl(305 70% 60%)", // purple
+  "hsl(330 75% 58%)", // pink
 ];
 
 /**
@@ -319,7 +322,7 @@ export function IndustryChart({ data, isLoading, selectedSector, onSectorSelect,
                   innerRadius={60}
                   paddingAngle={2}
                   onClick={handleSectorClick}
-                  activeIndex={hoveredIndex}
+                  activeIndex={hoveredIndex ?? undefined}
                   activeShape={(props: any) => {
                     // Only show expanded shape on hover, not on click
                     if (hoveredIndex === null || showCompanies) {
@@ -388,7 +391,18 @@ export function IndustryChart({ data, isLoading, selectedSector, onSectorSelect,
 
 export function IndustryTable({ data, isLoading, selectedSector, onSectorSelect, breakdownType = "sector" }: IndustryChartProps) {
   const title = getBreakdownTypeTitle(breakdownType);
-  const categoryLabel = breakdownType === "sector" ? "Sector" : breakdownType === "account" ? "Account" : breakdownType === "currency" ? "Currency" : breakdownType === "market" ? "Market" : "Asset Type";
+  const categoryLabel =
+    breakdownType === "sector"
+      ? "Sector"
+      : breakdownType === "account"
+        ? "Account"
+        : breakdownType === "currency"
+          ? "Currency"
+          : breakdownType === "region"
+            ? "Region"
+            : breakdownType === "assetType"
+              ? "Asset Type"
+              : "Sector";
 
   if (isLoading) {
     return (
@@ -468,7 +482,7 @@ export function IndustryTable({ data, isLoading, selectedSector, onSectorSelect,
                   </TableCell>
                   <TableCell
                     className={`text-right tabular-nums ${
-                      selectedSectorData.averageGrowth >= 0 ? "text-chart-1" : "text-destructive"
+                      selectedSectorData.averageGrowth >= 0 ? "text-positive" : "text-destructive"
                     }`}
                   >
                     {selectedSectorData.averageGrowth >= 0 ? "+" : ""}
@@ -499,7 +513,7 @@ export function IndustryTable({ data, isLoading, selectedSector, onSectorSelect,
                     </TableCell>
                     <TableCell
                       className={`text-right tabular-nums ${
-                        company.growth >= 0 ? "text-chart-1" : "text-destructive"
+                        company.growth >= 0 ? "text-positive" : "text-destructive"
                       }`}
                     >
                       {company.growth >= 0 ? "+" : ""}
@@ -529,7 +543,7 @@ export function IndustryTable({ data, isLoading, selectedSector, onSectorSelect,
                   </TableCell>
                   <TableCell
                     className={`text-right tabular-nums ${
-                      item.averageGrowth >= 0 ? "text-chart-1" : "text-destructive"
+                      item.averageGrowth >= 0 ? "text-positive" : "text-destructive"
                     }`}
                   >
                     {item.averageGrowth >= 0 ? "+" : ""}

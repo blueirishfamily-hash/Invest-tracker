@@ -175,7 +175,7 @@ export function CryptoCandlestickChart({ assets }: CryptoCandlestickChartProps) 
                       </div>
                       <div className="flex justify-between gap-4">
                         <span className="text-muted-foreground">High:</span>
-                        <span className="font-medium text-chart-1">{formatCurrency(data.high)}</span>
+                        <span className="font-medium text-positive">{formatCurrency(data.high)}</span>
                       </div>
                       <div className="flex justify-between gap-4">
                         <span className="text-muted-foreground">Low:</span>
@@ -188,7 +188,7 @@ export function CryptoCandlestickChart({ assets }: CryptoCandlestickChartProps) 
                       <div className="flex justify-between gap-4 pt-1 border-t">
                         <span className="text-muted-foreground">Change:</span>
                         <span className={`font-medium ${
-                          change >= 0 ? "text-chart-1" : "text-destructive"
+                          change >= 0 ? "text-positive" : "text-destructive"
                         }`}>
                           {change >= 0 ? "+" : ""}
                           {formatCurrency(change)} ({changePercent.toFixed(2)}%)
@@ -208,7 +208,7 @@ export function CryptoCandlestickChart({ assets }: CryptoCandlestickChartProps) 
               dot={(props: any) => {
                 const { payload, cx, cy } = props;
                 const { open, high, low, close, isPositive } = payload;
-                const color = isPositive ? "hsl(var(--chart-1))" : "hsl(var(--destructive))";
+                const color = isPositive ? "hsl(var(--positive))" : "hsl(var(--destructive))";
                 
                 // Calculate positions relative to cy (which is the close position)
                 const range = maxValue + padding - (minValue - padding);

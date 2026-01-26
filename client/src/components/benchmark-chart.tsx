@@ -193,15 +193,17 @@ function generateTimeSeriesData(
   return dataPoints;
 }
 
+// Sector/category differentiation palette (intentionally colorful; exempt from base theme).
+// Avoids the app’s semantic trend colors (green/red) to reduce confusion.
 const COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(142 50% 45%)",
-  "hsl(200 60% 50%)",
-  "hsl(280 50% 50%)",
+  "hsl(210 90% 56%)", // blue
+  "hsl(190 85% 50%)", // cyan
+  "hsl(165 70% 45%)", // teal
+  "hsl(45 90% 55%)",  // amber
+  "hsl(25 90% 55%)",  // orange
+  "hsl(275 80% 62%)", // violet
+  "hsl(305 70% 60%)", // purple
+  "hsl(330 75% 58%)", // pink
 ];
 
 function formatCurrency(value: number): string {
@@ -379,7 +381,7 @@ export function BenchmarkChart({
             {visibleCategoryPerformance.map((perf, index) => (
               <div key={perf.category} className={`${statCardPadding} rounded-lg bg-muted/50`}>
                 <div className={`${size === "small" ? "text-xs" : "text-sm"} text-muted-foreground truncate`}>{perf.category}</div>
-                <div className={`${size === "small" ? "text-lg" : "text-xl"} font-bold tabular-nums ${perf.performance >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                <div className={`${size === "small" ? "text-lg" : "text-xl"} font-bold tabular-nums ${perf.performance >= 0 ? "text-positive" : "text-destructive"}`}>
                   {perf.performance >= 0 ? "+" : ""}{perf.performance.toFixed(2)}%
                 </div>
               </div>
@@ -617,7 +619,7 @@ export function BenchmarkChart({
           <div className={`mt-4 grid grid-cols-1 gap-4 text-center`}>
             <div className={`${statCardPadding} rounded-lg bg-muted/50`}>
               <div className="text-sm text-muted-foreground">Portfolio {timeframeLabel[timeframe]}</div>
-              <div className={`text-xl font-bold tabular-nums ${portfolioPerformance >= 0 ? "text-chart-1" : "text-destructive"}`}>
+              <div className={`text-xl font-bold tabular-nums ${portfolioPerformance >= 0 ? "text-positive" : "text-destructive"}`}>
                 {portfolioPerformance >= 0 ? "+" : ""}{portfolioPerformance.toFixed(2)}%
               </div>
             </div>

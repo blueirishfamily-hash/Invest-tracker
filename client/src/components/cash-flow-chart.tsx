@@ -646,7 +646,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
         {totalIncomeToSafeToSpendPath && (
           <path
             d={totalIncomeToSafeToSpendPath}
-            fill="hsl(var(--chart-3))"
+            fill="hsl(var(--positive))"
             opacity="0.8"
             filter="url(#shadow)"
           />
@@ -782,7 +782,7 @@ function SankeyChart({ data }: { data: CashFlowData }) {
               y={col3SafeToSpendY}
               width={nodeWidth}
               height={col3SafeToSpendHeight}
-              fill="hsl(var(--chart-3))"
+              fill="hsl(var(--positive))"
               rx="4"
               filter="url(#shadow)"
             />
@@ -1054,7 +1054,7 @@ function PieChartView({ data }: { data: CashFlowData }) {
     ...(safeToSpend > 0 ? [{
       name: "Safe to Spend",
       value: safeToSpend,
-      fill: "hsl(var(--chart-3))", // Green
+      fill: "hsl(var(--positive))", // Green
     }] : []),
   ].filter((item) => item.value > 0);
 
@@ -1073,7 +1073,7 @@ function PieChartView({ data }: { data: CashFlowData }) {
       <ChartContainer
         config={{
           income: { label: "Income", color: "hsl(var(--chart-1))" },
-          available: { label: "Safe to Spend", color: "hsl(var(--chart-3))" },
+          available: { label: "Safe to Spend", color: "hsl(var(--positive))" },
         }}
         className="h-[400px] flex-1"
       >

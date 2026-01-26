@@ -49,7 +49,7 @@ export default function BubbleWatchPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-4 rounded-lg bg-muted/50" data-testid="explanation-concentration">
               <div className="flex items-center gap-2 mb-2">
-                <PieChart className="h-5 w-5 text-chart-4" />
+                <PieChart className="h-5 w-5 text-warning" />
                 <h4 className="font-medium">Concentration Check</h4>
               </div>
               <p className="text-sm text-muted-foreground mb-3">
@@ -63,7 +63,7 @@ export default function BubbleWatchPage() {
             </div>
             <div className="p-4 rounded-lg bg-muted/50" data-testid="explanation-velocity">
               <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="h-5 w-5 text-chart-4" />
+                <TrendingUp className="h-5 w-5 text-warning" />
                 <h4 className="font-medium">Velocity Check</h4>
               </div>
               <p className="text-sm text-muted-foreground mb-3">
@@ -72,14 +72,14 @@ export default function BubbleWatchPage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Multiplier:</span>
                 <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-chart-4 w-[60%]" />
+                  <div className="h-full bg-warning w-[60%]" />
                 </div>
                 <span className="text-sm font-medium">1.5x SPY</span>
               </div>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground mt-4 p-3 rounded-lg bg-chart-4/10 border border-chart-4/20" data-testid="text-alert-explanation">
-            <AlertTriangle className="h-4 w-4 inline mr-2 text-chart-4" />
+          <p className="text-sm text-muted-foreground mt-4 p-3 rounded-lg bg-warning/10 border border-warning/20" data-testid="text-alert-explanation">
+            <AlertTriangle className="h-4 w-4 inline mr-2 text-warning" />
             An alert is triggered when <strong>both</strong> conditions are met, indicating a sector may be overheating.
           </p>
         </CardContent>
@@ -115,7 +115,7 @@ export default function BubbleWatchPage() {
                     key={industry.industry}
                     className={`p-4 rounded-lg border ${
                       isOverheating
-                        ? "border-chart-4 bg-chart-4/5"
+                        ? "border-warning bg-warning/5"
                         : "border-border bg-muted/30"
                     }`}
                     data-testid={`sector-risk-${index}`}
@@ -123,9 +123,9 @@ export default function BubbleWatchPage() {
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         {isOverheating ? (
-                          <AlertTriangle className="h-5 w-5 text-chart-4" />
+                          <AlertTriangle className="h-5 w-5 text-warning" />
                         ) : (
-                          <CheckCircle className="h-5 w-5 text-chart-1" />
+                          <CheckCircle className="h-5 w-5 text-positive" />
                         )}
                         <h4 className="font-medium" data-testid={`text-sector-name-${index}`}>
                           {industry.industry}
@@ -134,8 +134,8 @@ export default function BubbleWatchPage() {
                       <span
                         className={`text-sm font-medium px-2 py-1 rounded ${
                           isOverheating
-                            ? "bg-chart-4/20 text-chart-4"
-                            : "bg-chart-1/20 text-chart-1"
+                            ? "bg-warning/20 text-warning"
+                            : "bg-positive/20 text-positive"
                         }`}
                         data-testid={`badge-risk-status-${index}`}
                       >
@@ -149,7 +149,7 @@ export default function BubbleWatchPage() {
                           <span className="text-xs text-muted-foreground">Concentration</span>
                           <span
                             className={`text-xs font-medium tabular-nums ${
-                              concentrationRisk ? "text-chart-4" : ""
+                              concentrationRisk ? "text-warning" : ""
                             }`}
                             data-testid={`text-concentration-${index}`}
                           >
@@ -159,7 +159,7 @@ export default function BubbleWatchPage() {
                         <div className="relative h-2 bg-muted rounded-full overflow-hidden">
                           <div
                             className={`absolute inset-y-0 left-0 rounded-full ${
-                              concentrationRisk ? "bg-chart-4" : "bg-chart-1"
+                              concentrationRisk ? "bg-warning" : "bg-positive"
                             }`}
                             style={{ width: `${Math.min(industry.percentage, 100)}%` }}
                           />
@@ -174,7 +174,7 @@ export default function BubbleWatchPage() {
                           <span className="text-xs text-muted-foreground">Growth vs SPY</span>
                           <span
                             className={`text-xs font-medium tabular-nums ${
-                              velocityRisk ? "text-chart-4" : ""
+                              velocityRisk ? "text-warning" : ""
                             }`}
                             data-testid={`text-velocity-${index}`}
                           >
@@ -186,7 +186,7 @@ export default function BubbleWatchPage() {
                         <div className="relative h-2 bg-muted rounded-full overflow-hidden">
                           <div
                             className={`absolute inset-y-0 left-0 rounded-full ${
-                              velocityRisk ? "bg-chart-4" : "bg-chart-1"
+                              velocityRisk ? "bg-warning" : "bg-positive"
                             }`}
                             style={{
                               width: `${Math.min(

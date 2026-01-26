@@ -337,10 +337,10 @@ export function ResearchTab() {
                       const isPositive = change >= 0;
                       return (
                         <div className="flex flex-col items-end">
-                          <p className={`text-sm font-semibold tabular-nums ${isPositive ? "text-chart-1" : "text-destructive"}`}>
+                          <p className={`text-sm font-semibold tabular-nums ${isPositive ? "text-positive" : "text-destructive"}`}>
                             {isPositive ? "+" : ""}${change.toFixed(2)}
                           </p>
-                          <p className={`text-xs tabular-nums ${isPositive ? "text-chart-1" : "text-destructive"}`}>
+                          <p className={`text-xs tabular-nums ${isPositive ? "text-positive" : "text-destructive"}`}>
                             {isPositive ? "+" : ""}{changePercent.toFixed(2)}%
                           </p>
                         </div>
@@ -495,7 +495,7 @@ export function ResearchTab() {
                           <CardDescription>52W High</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <div className="text-2xl font-bold tabular-nums text-chart-1">
+                          <div className="text-2xl font-bold tabular-nums text-positive">
                             ${formatNumber(financialData.overview.fiftyTwoWeekHigh)}
                           </div>
                         </CardContent>
@@ -643,7 +643,7 @@ export function ResearchTab() {
                           <CardDescription>Revenue Growth (YoY)</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.revenueGrowthYoy >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.revenueGrowthYoy >= 0 ? "text-positive" : "text-destructive"}`}>
                             {formatPercent(financialData.growth.revenueGrowthYoy)}
                           </div>
                         </CardContent>
@@ -653,7 +653,7 @@ export function ResearchTab() {
                           <CardDescription>Revenue Growth (QoQ)</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.revenueGrowthQoq >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.revenueGrowthQoq >= 0 ? "text-positive" : "text-destructive"}`}>
                             {formatPercent(financialData.growth.revenueGrowthQoq)}
                           </div>
                         </CardContent>
@@ -663,7 +663,7 @@ export function ResearchTab() {
                           <CardDescription>Earnings Growth (YoY)</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.earningsGrowthYoy >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.earningsGrowthYoy >= 0 ? "text-positive" : "text-destructive"}`}>
                             {formatPercent(financialData.growth.earningsGrowthYoy)}
                           </div>
                         </CardContent>
@@ -673,7 +673,7 @@ export function ResearchTab() {
                           <CardDescription>Earnings Growth (QoQ)</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.earningsGrowthQoq >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                          <div className={`text-2xl font-bold tabular-nums ${financialData.growth.earningsGrowthQoq >= 0 ? "text-positive" : "text-destructive"}`}>
                             {formatPercent(financialData.growth.earningsGrowthQoq)}
                           </div>
                         </CardContent>

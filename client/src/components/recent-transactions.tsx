@@ -132,11 +132,11 @@ export function RecentTransactions({
                 className={`flex items-center justify-between rounded-lg hover:bg-muted/50 transition-colors ${size === "small" ? "p-1.5" : "p-2"}`}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className={`rounded-full ${isDebit ? "bg-destructive/10" : "bg-chart-1/10"} ${size === "small" ? "p-1" : "p-1.5"}`}>
+                  <div className={`rounded-full ${isDebit ? "bg-destructive/10" : "bg-positive/10"} ${size === "small" ? "p-1" : "p-1.5"}`}>
                     {isDebit ? (
-                      <ArrowDownRight className={`${size === "small" ? "h-3 w-3" : "h-3.5 w-3.5"} ${isDebit ? "text-destructive" : "text-chart-1"}`} />
+                      <ArrowDownRight className={`${size === "small" ? "h-3 w-3" : "h-3.5 w-3.5"} ${isDebit ? "text-destructive" : "text-positive"}`} />
                     ) : (
-                      <ArrowUpRight className={`${size === "small" ? "h-3 w-3" : "h-3.5 w-3.5"} ${isDebit ? "text-destructive" : "text-chart-1"}`} />
+                      <ArrowUpRight className={`${size === "small" ? "h-3 w-3" : "h-3.5 w-3.5"} ${isDebit ? "text-destructive" : "text-positive"}`} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -165,7 +165,7 @@ export function RecentTransactions({
                     </div>
                   </div>
                 </div>
-                <div className={`${size === "small" ? "text-xs" : "text-sm"} font-semibold tabular-nums ml-2 ${isDebit ? "text-destructive" : "text-chart-1"}`}>
+                <div className={`${size === "small" ? "text-xs" : "text-sm"} font-semibold tabular-nums ml-2 ${isDebit ? "text-destructive" : "text-positive"}`}>
                   {isDebit ? "-" : "+"}{formatCurrency(amount)}
                 </div>
               </div>

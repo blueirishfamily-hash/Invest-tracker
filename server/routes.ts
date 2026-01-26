@@ -2787,26 +2787,48 @@ export async function registerRoutes(
 
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-      const monthly: Array<{ month: string; total: number; categories: Record<string, number> }> = [];
+      const monthly: Array<{
+        month: string;
+        income: number;
+        expenses: number;
+        net: number;
+        // Back-compat: total previously represented monthly expenses
+        total: number;
+        categories: Record<string, number>;
+      }> = [];
 
       for (let i = 0; i < months; i += 1) {
         const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1);
         const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 0, 23, 59, 59);
-        const monthTransactions = transactions.filter((txn) => {
+        const monthDebitTransactions = transactions.filter((txn) => {
           const date = new Date(txn.date);
           return date >= monthStart && date <= monthEnd && txn.direction === "debit";
         });
+        const monthCreditTransactions = transactions.filter((txn) => {
+          const date = new Date(txn.date);
+          return date >= monthStart && date <= monthEnd && txn.direction === "credit";
+        });
+
         const categoriesTotals: Record<string, number> = {};
-        let total = 0;
-        for (const txn of monthTransactions) {
+        let expenses = 0;
+        for (const txn of monthDebitTransactions) {
           const categoryName = txn.categoryId ? categoryLookup.get(txn.categoryId)?.name || "Uncategorized" : "Uncategorized";
           const amount = Math.abs(txn.amount);
           categoriesTotals[categoryName] = (categoriesTotals[categoryName] || 0) + amount;
-          total += amount;
+          expenses += amount;
         }
+
+        let income = 0;
+        for (const txn of monthCreditTransactions) {
+          income += Math.abs(txn.amount);
+        }
+
         monthly.push({
           month: `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`,
-          total,
+          income,
+          expenses,
+          net: income - expenses,
+          total: expenses,
           categories: categoriesTotals,
         });
       }

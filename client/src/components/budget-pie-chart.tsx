@@ -117,7 +117,7 @@ export function BudgetPieChart({
     ...(safeToSpend > 0 ? [{
       name: "Safe to Spend",
       value: safeToSpend,
-      fill: "hsl(var(--chart-3))", // Green
+      fill: "hsl(var(--positive))", // Green
     }] : []),
   ].filter((item) => item.value > 0);
 
@@ -182,7 +182,7 @@ export function BudgetPieChart({
               <ChartContainer
                 config={{
                   income: { label: "Income", color: "hsl(var(--chart-1))" },
-                  available: { label: "Safe to Spend", color: "hsl(var(--chart-3))" },
+                  available: { label: "Safe to Spend", color: "hsl(var(--positive))" },
                 }}
                 className={`${size === "large" ? "h-[220px]" : "h-[175px]"} flex-1`}
               >
