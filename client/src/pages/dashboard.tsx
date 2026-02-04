@@ -512,7 +512,7 @@ export default function Dashboard() {
   }, [benchmark, benchmarkChart, benchmarkChartLoading, benchmarkLoading, cardSizes, computedTotalValue, dailyChange, dailyChangePercent, holdings, holdingsLoading, netWorth, netWorthLoading, timeframe]);
 
   return (
-    <div className="p-6 space-y-6" data-testid="page-dashboard">
+    <div className="space-y-6" data-testid="page-dashboard">
       <SEO 
         title="Dashboard" 
         description="Track your investment portfolio performance with real-time metrics, benchmarking, and industry analysis." 
